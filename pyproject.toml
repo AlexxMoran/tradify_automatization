@@ -1,0 +1,18 @@
+[project]
+name = "invoice-builder"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.116.0",
+    "httpx>=0.28.0",
+    "openai>=1.97.0",
+    "pdfplumber>=0.11.7",
+    "pydantic>=2.11.0",
+    "pydantic-settings>=2.10.0",
+    "pymupdf>=1.26.0",
+    "pypdf>=5.7.0",
+    "python-multipart>=0.0.20",
+    "uvicorn>=0.35.0",
+]

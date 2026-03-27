@@ -30,6 +30,10 @@ class BaseLinkerClient:
         self.api_token = settings.baselinker_api_token
         self.api_url = settings.baselinker_api_url
         self.timeout_seconds = settings.baselinker_timeout_seconds
+        self._http_client = httpx.AsyncClient(timeout=self.timeout_seconds)
+
+    async def aclose(self) -> None:
+        await self._http_client.aclose()
 
     async def fetch_external_invoice_pdf(self, order_id: str) -> ExternalInvoiceFile:
         invoices = await self.get_invoices(order_id)
@@ -85,16 +89,14 @@ class BaseLinkerClient:
             raise BaseLinkerError("BASELINKER_API_TOKEN is not configured")
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    self.api_url,
-                    headers={"X-BLToken": self.api_token},
-                    data={
-                        "method": method,
-                        "parameters": json.dumps(parameters),
-                    },
-                    timeout=self.timeout_seconds,
-                )
+            response = await self._http_client.post(
+                self.api_url,
+                headers={"X-BLToken": self.api_token},
+                data={
+                    "method": method,
+                    "parameters": json.dumps(parameters),
+                },
+            )
             response.raise_for_status()
         except httpx.TimeoutException as exc:
             raise BaseLinkerError(f"BaseLinker request timed out for method={method}") from exc

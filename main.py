@@ -14,6 +14,7 @@ async def lifespan(app: FastAPI):
     app.state.baselinker_client = BaseLinkerClient()
     app.state.description_generator = GoodsDescriptionGenerator()
     yield
+    await app.state.baselinker_client.aclose()
 
 
 settings = get_settings()

@@ -78,8 +78,6 @@ class InvoicePdfParser:
                 raise InvoiceParsingError(f"Invoice item name is empty for line {item.line_no}")
             if not self.HS_CODE_PATTERN.search(item.hs_code):
                 raise InvoiceParsingError(f"Invalid HS code for line {item.line_no}: {item.hs_code}")
-            if not item.origin:
-                raise InvoiceParsingError(f"Origin is empty for line {item.line_no}")
             for field_name in (
                 "currency",
                 "quantity",

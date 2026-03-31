@@ -247,8 +247,10 @@ class GoodsDescriptionGenerator:
         )
 
     def _normalize_country(self, origin: str) -> str:
+        if not origin or not origin.strip():
+            return "N/A"
         normalized = origin.strip().upper()
-        return COUNTRY_MAP.get(normalized, origin.strip() or "UNKNOWN")
+        return COUNTRY_MAP.get(normalized, origin.strip())
 
     def _infer_material(self, item_name: str) -> str:
         normalized = self._sanitize_for_matching(item_name)
@@ -262,7 +264,7 @@ class GoodsDescriptionGenerator:
         for keywords, manufacturer in MANUFACTURER_RULES:
             if any(keyword in normalized for keyword in keywords):
                 return manufacturer
-        if country == "UNKNOWN":
+        if country in {"UNKNOWN", "N/A"}:
             return "UNKNOWN"
         return f"UNKNOWN manufacturer, {country}"
 

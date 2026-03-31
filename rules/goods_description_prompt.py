@@ -18,8 +18,11 @@ def build_goods_description_prompt(payload: list[dict[str, object]]) -> str:
         "Prefer a compact material format like 'plastic/steel' when two materials are known. "
         "If a field cannot be determined with confidence, use 'UNKNOWN' for factual fields or 'N/A' for non-applicable fields. "
         "Use the origin field from the source row for made_in and country_of_origin unless there is a clear reason not to. "
-        "If origin is empty, do not treat that as an error: still generate the descriptive fields from the available row data. "
-        "When origin is empty and you cannot determine made_in or country_of_origin with confidence, return 'N/A' for those fields. "
+        "Use the item_name, HS code, product description, weights, prices, quantities, and any manufacturer clues in the row to infer the most likely material and country fields. "
+        "When origin is empty, infer made_in and country_of_origin from the product description, item name, HS code, and the rest of the row context instead of relying on origin. "
+        "When origin is empty, still generate made_of from the row data instead of leaving it blank. "
+        "If origin is empty, do not default to UNKNOWN immediately; first infer the most likely made_of, made_in, and country_of_origin from the available row data. "
+        "Use UNKNOWN for made_of, made_in, or country_of_origin only as a last resort when the row does not contain enough signals for a reasonable inference. "
         "Do not change currency, quantities, prices, or weights. "
         f"Invoice items: {json.dumps(payload, ensure_ascii=False)}"
     )

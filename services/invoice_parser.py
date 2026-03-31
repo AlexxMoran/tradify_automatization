@@ -83,8 +83,6 @@ class InvoicePdfParser:
                 "quantity",
                 "unit_price",
                 "line_value",
-                "unit_net_weight_kg",
-                "total_net_weight_kg",
             ):
                 if not getattr(item, field_name):
                     raise InvoiceParsingError(f"{field_name} is empty for line {item.line_no}")
@@ -294,8 +292,8 @@ class InvoicePdfParser:
             quantity=collapse_whitespace(raw_item["quantity"]),
             unit_price=collapse_whitespace(raw_item["unit_price"]),
             line_value=collapse_whitespace(raw_item["line_value"]),
-            unit_net_weight_kg=collapse_whitespace(raw_item["unit_net_weight_kg"]),
-            total_net_weight_kg=collapse_whitespace(raw_item["total_net_weight_kg"]),
+            unit_net_weight_kg=collapse_whitespace(raw_item["unit_net_weight_kg"]) or "0",
+            total_net_weight_kg=collapse_whitespace(raw_item["total_net_weight_kg"]) or "0",
             source_text=collapse_whitespace(raw_item["source_text"]),
         )
 

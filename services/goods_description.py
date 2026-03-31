@@ -102,13 +102,14 @@ class GoodsDescriptionGenerator:
             source_item = source_by_line.get(line_no)
             if source_item is None:
                 raise DescriptionGenerationError(f"OpenAI returned an unknown line number: {line_no}")
+            country_fallback = self._openai_country_fallback(source_item.origin)
             made_in = clean_optional_text(
                 entry.get("made_in"),
-                fallback=self._normalize_country(source_item.origin),
+                fallback=country_fallback,
             )
             country_of_origin = clean_optional_text(
                 entry.get("country_of_origin"),
-                fallback=self._normalize_country(source_item.origin),
+                fallback=country_fallback,
             )
             descriptions.append(
                 self._build_description_entry(
@@ -116,8 +117,11 @@ class GoodsDescriptionGenerator:
                     description_en=self._sanitize_description(str(entry["description_en"])),
                     description_pl=self._sanitize_description(str(entry["description_pl"])),
                     made_of=self._normalize_material_field(entry.get("made_of")),
-                    made_in=made_in,
-                    country_of_origin=country_of_origin,
+                    made_in=self._normalize_openai_country_field(made_in, country_fallback),
+                    country_of_origin=self._normalize_openai_country_field(
+                        country_of_origin,
+                        country_fallback,
+                    ),
                     melt_and_pour=clean_optional_text(entry.get("melt_and_pour"), fallback="N/A"),
                     manufacturer_data=clean_optional_text(
                         entry.get("manufacturer_data"),
@@ -252,6 +256,17 @@ class GoodsDescriptionGenerator:
         normalized = origin.strip().upper()
         return COUNTRY_MAP.get(normalized, origin.strip())
 
+    def _openai_country_fallback(self, origin: str) -> str:
+        if not origin or not origin.strip():
+            return "UNKNOWN"
+        return self._normalize_country(origin)
+
+    def _normalize_openai_country_field(self, value: str, fallback: str) -> str:
+        cleaned = clean_optional_text(value, fallback=fallback)
+        if cleaned.strip().upper() in {"N/A", "NA", "NOT APPLICABLE"}:
+            return "UNKNOWN"
+        return cleaned
+
     def _infer_material(self, item_name: str) -> str:
         normalized = self._sanitize_for_matching(item_name)
         for keywords, material in MATERIAL_RULES:
@@ -270,6 +285,8 @@ class GoodsDescriptionGenerator:
 
     def _normalize_material_field(self, value: Any) -> str:
         cleaned = clean_optional_text(value, fallback="UNKNOWN")
+        if cleaned.strip().upper() in {"N/A", "NA", "NOT APPLICABLE"}:
+            return "UNKNOWN"
         for banned_word in BANNED_WORDS:
             cleaned = re.sub(rf"\b{re.escape(banned_word)}\b", "", cleaned, flags=re.IGNORECASE)
         cleaned = collapse_whitespace(cleaned) or "UNKNOWN"

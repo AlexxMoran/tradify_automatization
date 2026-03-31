@@ -1,4 +1,5 @@
 from io import BytesIO
+import logging
 from pathlib import Path
 import re
 
@@ -6,10 +7,12 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import StreamingResponse
 
 from core.auth import verify_api_key
+from core.utils import log_request_warning
 from models import GenerateInvoiceRequest, ProcessedInvoiceResult
 from services import GenerateInvoiceError, GenerateInvoiceService, GenerateInvoiceTestService
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # 20 MB
 UPLOAD_CHUNK_SIZE = 1024 * 1024
@@ -38,6 +41,13 @@ async def generate_invoice(request: Request, payload: GenerateInvoiceRequest):
     try:
         result = await service(payload.order_id)
     except GenerateInvoiceError as exc:
+        log_request_warning(
+            logger,
+            "generate_failed",
+            request,
+            order_id=payload.order_id,
+            error=exc,
+        )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     filename = result.invoice_number or f"invoice_{result.order_id}"
@@ -67,6 +77,14 @@ async def generate_test(
             source_filename=pdf.filename,
         )
     except GenerateInvoiceError as exc:
+        log_request_warning(
+            logger,
+            "generate_test_failed",
+            request,
+            order_id=order_id,
+            source_filename=pdf.filename,
+            error=exc,
+        )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     filename = _build_test_filename_stem(pdf.filename, order_id)

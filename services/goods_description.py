@@ -25,6 +25,19 @@ class DescriptionGenerationError(Exception):
 
 
 class GoodsDescriptionGenerator:
+    METAL_HINTS = (
+        "metal",
+        "steel",
+        "stainless",
+        "iron",
+        "brass",
+        "zinc",
+        "alloy",
+        "tin",
+        "nickel",
+        "chrome",
+    )
+
     def __init__(self) -> None:
         settings = get_settings()
         self.api_key = settings.openai_api_key
@@ -66,15 +79,16 @@ class GoodsDescriptionGenerator:
         for item in line_items:
             description_en, description_pl = self._classify_description(item.item_name)
             country = self._normalize_country(item.origin)
+            made_of = self._infer_material(item.item_name)
             descriptions.append(
                 self._build_description_entry(
                     item,
                     description_en=description_en,
                     description_pl=description_pl,
-                    made_of=self._infer_material(item.item_name),
+                    made_of=made_of,
                     made_in=country,
                     country_of_origin=country,
-                    melt_and_pour="N/A",
+                    melt_and_pour=self._derive_melt_and_pour(made_of, country, country),
                     manufacturer_data=self._infer_manufacturer(item.item_name, country),
                 )
             )
@@ -111,21 +125,29 @@ class GoodsDescriptionGenerator:
                 entry.get("country_of_origin"),
                 fallback=country_fallback,
             )
+            normalized_made_of = self._normalize_material_field(entry.get("made_of"))
+            normalized_made_in = self._normalize_openai_country_field(made_in, country_fallback)
+            normalized_country_of_origin = self._normalize_openai_country_field(
+                country_of_origin,
+                country_fallback,
+            )
             descriptions.append(
                 self._build_description_entry(
                     source_item,
                     description_en=self._sanitize_description(str(entry["description_en"])),
                     description_pl=self._sanitize_description(str(entry["description_pl"])),
-                    made_of=self._normalize_material_field(entry.get("made_of")),
-                    made_in=self._normalize_openai_country_field(made_in, country_fallback),
-                    country_of_origin=self._normalize_openai_country_field(
-                        country_of_origin,
-                        country_fallback,
+                    made_of=normalized_made_of,
+                    made_in=normalized_made_in,
+                    country_of_origin=normalized_country_of_origin,
+                    melt_and_pour=self._derive_melt_and_pour(
+                        normalized_made_of,
+                        normalized_made_in,
+                        normalized_country_of_origin,
                     ),
-                    melt_and_pour=clean_optional_text(entry.get("melt_and_pour"), fallback="N/A"),
-                    manufacturer_data=clean_optional_text(
+                    manufacturer_data=self._normalize_manufacturer_data(
                         entry.get("manufacturer_data"),
-                        fallback=self._infer_manufacturer(source_item.item_name, country_of_origin),
+                        item_name=source_item.item_name,
+                        country=normalized_country_of_origin,
                     ),
                 )
             )
@@ -279,9 +301,7 @@ class GoodsDescriptionGenerator:
         for keywords, manufacturer in MANUFACTURER_RULES:
             if any(keyword in normalized for keyword in keywords):
                 return manufacturer
-        if country in {"UNKNOWN", "N/A"}:
-            return "UNKNOWN"
-        return f"UNKNOWN manufacturer, {country}"
+        return "UNKNOWN"
 
     def _normalize_material_field(self, value: Any) -> str:
         cleaned = clean_optional_text(value, fallback="UNKNOWN")
@@ -313,6 +333,51 @@ class GoodsDescriptionGenerator:
         if len(words) == 1:
             return self._capitalize_material_word(words[0])
         return cleaned
+
+    def _derive_melt_and_pour(
+        self,
+        made_of: str,
+        made_in: str,
+        country_of_origin: str,
+    ) -> str:
+        normalized = collapse_whitespace(made_of).lower()
+        if not normalized:
+            return "N/A"
+        if not any(hint in normalized for hint in self.METAL_HINTS):
+            return "N/A"
+
+        countries = [
+            value.strip()
+            for value in (made_in, country_of_origin)
+            if value and value.strip() and value.strip().upper() not in {"UNKNOWN", "N/A"}
+        ]
+        if not countries:
+            return "UNKNOWN"
+        if len(countries) == 1 or countries[0] == countries[-1]:
+            return countries[0]
+        return " / ".join(dict.fromkeys(countries))
+
+    def _normalize_manufacturer_data(
+        self,
+        value: Any,
+        *,
+        item_name: str,
+        country: str,
+    ) -> str:
+        cleaned = clean_optional_text(value)
+        if self._looks_like_address(cleaned):
+            return cleaned
+        return self._infer_manufacturer(item_name, country)
+
+    def _looks_like_address(self, value: str) -> bool:
+        if not value:
+            return False
+        normalized = value.strip()
+        if normalized.upper() in {"UNKNOWN", "N/A"}:
+            return False
+        if "," in normalized and re.search(r"\d", normalized):
+            return True
+        return bool(re.search(r"\b(street|strasse|straße|road|avenue|ave|blvd|lane|gasse)\b", normalized, re.IGNORECASE))
 
     def _capitalize_material_word(self, value: str) -> str:
         lowered = value.strip().lower()

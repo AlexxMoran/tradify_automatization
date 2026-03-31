@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from io import BytesIO
 from decimal import Decimal, InvalidOperation
@@ -242,20 +243,22 @@ class GoodsDescriptionPdfBuilder:
     def _row_values(self, description) -> dict[str, str]:
         return {
             "line_no": str(description.line_no),
-            "description": (
+            "description": self._prepare_cell_text(
+                (
                 f"PL: {description.description_pl}\n"
                 f"EN: {description.description_en}"
+                )
             ),
-            "hs_code": description.hs_code,
-            "made_of": description.made_of,
-            "made_in": description.made_in,
-            "country_of_origin": description.country_of_origin,
-            "melt_and_pour": description.melt_and_pour,
-            "manufacturer_data": description.manufacturer_data,
-            "quantity": description.quantity,
-            "unit_price": description.unit_price,
-            "line_value": description.line_value,
-            "net_weight_kg": description.net_weight_kg,
+            "hs_code": self._prepare_cell_text(description.hs_code),
+            "made_of": self._prepare_cell_text(description.made_of),
+            "made_in": self._prepare_cell_text(description.made_in),
+            "country_of_origin": self._prepare_cell_text(description.country_of_origin),
+            "melt_and_pour": self._prepare_cell_text(description.melt_and_pour),
+            "manufacturer_data": self._prepare_cell_text(description.manufacturer_data),
+            "quantity": self._prepare_cell_text(description.quantity),
+            "unit_price": self._prepare_cell_text(description.unit_price),
+            "line_value": self._prepare_cell_text(description.line_value),
+            "net_weight_kg": self._prepare_cell_text(description.net_weight_kg),
         }
 
     def _measure_row_height(
@@ -265,9 +268,9 @@ class GoodsDescriptionPdfBuilder:
     ) -> float:
         line_counts = []
         for column_name, _, width in columns:
-            wrapped = self._wrap_cell_text(row_cells[column_name], width - 6, self.BODY_FONT_SIZE)
+            wrapped = self._wrap_cell_text(row_cells[column_name], width - 8, self.BODY_FONT_SIZE)
             line_counts.append(max(1, len(wrapped)))
-        return max(line_counts) * self.LINE_HEIGHT + self.ROW_PADDING * 2
+        return max(line_counts) * self.LINE_HEIGHT + self.ROW_PADDING * 2 + 2
 
     def _draw_row(
         self,
@@ -283,7 +286,7 @@ class GoodsDescriptionPdfBuilder:
             page.draw_rect(rect, color=(0.35, 0.35, 0.35), width=0.5)
             wrapped = self._wrap_cell_text(
                 row_cells[column_name],
-                rect.width - 6,
+                rect.width - 8,
                 self.BODY_FONT_SIZE,
             )
             self._draw_multiline_text(
@@ -295,7 +298,7 @@ class GoodsDescriptionPdfBuilder:
             )
 
     def _wrap_cell_text(self, value: str, width: float, font_size: float) -> list[str]:
-        normalized = value.strip()
+        normalized = self._prepare_cell_text(value).strip()
         if not normalized:
             return [""]
 
@@ -405,6 +408,18 @@ class GoodsDescriptionPdfBuilder:
     def _fits_width(self, value: str, width: float, font_size: float) -> bool:
         return fitz.get_text_length(value, fontname="helv", fontsize=font_size) <= width
 
+    def _prepare_cell_text(self, value: str) -> str:
+        text = str(value or "")
+        text = text.replace("\u00a0", " ")
+        text = text.replace("\u2010", "-").replace("\u2011", "-").replace("\u2012", "-")
+        text = text.replace("\u2013", "-").replace("\u2014", "-").replace("\u2212", "-")
+        text = text.replace("\u2018", "'").replace("\u2019", "'")
+        text = text.replace("\u201c", '"').replace("\u201d", '"')
+        text = unicodedata.normalize("NFKD", text)
+        text = "".join(char for char in text if not unicodedata.combining(char))
+        text = re.sub(r"[^\x0a\x20-\x7e]", " ", text)
+        return re.sub(r"[ ]{2,}", " ", text)
+
     def _draw_multiline_text(
         self,
         page: fitz.Page,
@@ -414,6 +429,22 @@ class GoodsDescriptionPdfBuilder:
         font_size: float,
         padding: float,
     ) -> None:
+        inner_rect = fitz.Rect(
+            rect.x0 + padding,
+            rect.y0 + padding,
+            rect.x1 - padding,
+            rect.y1 - padding,
+        )
+        remaining = page.insert_textbox(
+            inner_rect,
+            "\n".join(lines),
+            fontsize=font_size,
+            fontname="helv",
+            lineheight=1.0,
+        )
+        if remaining >= 0:
+            return
+
         x = rect.x0 + padding
         y = rect.y0 + padding + font_size
         for line in lines:

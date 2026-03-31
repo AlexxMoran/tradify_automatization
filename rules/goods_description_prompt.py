@@ -23,6 +23,12 @@ def build_goods_description_prompt(payload: list[dict[str, object]]) -> str:
         "When origin is empty, still generate made_of from the row data instead of leaving it blank. "
         "If origin is empty, do not default to UNKNOWN immediately; first infer the most likely made_of, made_in, and country_of_origin from the available row data. "
         "Use UNKNOWN for made_of, made_in, or country_of_origin only as a last resort when the row does not contain enough signals for a reasonable inference. "
+        "The melt_and_pour field must reflect whether the item appears to be cast/poured metal. "
+        "If made_of suggests metal content such as steel, iron, brass, zinc, alloy, stainless steel, or generic metal, use the same country data as made_in/country_of_origin in melt_and_pour. "
+        "If the product does not appear to be metal-based, return 'N/A' for melt_and_pour. "
+        "The manufacturer_data field must contain only a postal-style manufacturer address. "
+        "Do not write explanations, assumptions, product notes, importer notes, or free-form sentences in manufacturer_data. "
+        "If you cannot infer a plausible manufacturer address from the row, brand clues, or product context, return 'UNKNOWN'. "
         "Do not change currency, quantities, prices, or weights. "
         f"Invoice items: {json.dumps(payload, ensure_ascii=False)}"
     )

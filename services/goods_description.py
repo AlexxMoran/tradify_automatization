@@ -1,19 +1,14 @@
 from __future__ import annotations
 
 import json
-import logging
 import re
 from typing import Any
-
-logger = logging.getLogger(__name__)
 
 from rules.goods_description_prompt import build_goods_description_prompt
 from rules.goods_description_rules import (
     BANNED_WORDS,
     COUNTRY_MAP,
-    DESCRIPTION_RULES,
     MANUFACTURER_RULES,
-    MATERIAL_RULES,
 )
 from core.config import get_settings
 from core.utils import clean_optional_text, collapse_whitespace
@@ -42,7 +37,7 @@ class GoodsDescriptionGenerator:
         settings = get_settings()
         self.api_key = settings.openai_api_key
         self.model = settings.openai_model
-        self.mode = settings.description_generation_mode.lower().strip() or "template"
+        self.mode = settings.description_generation_mode.lower().strip() or "hybrid"
         self._openai_client = None
         if self.api_key:
             from openai import AsyncOpenAI
@@ -52,46 +47,21 @@ class GoodsDescriptionGenerator:
         self,
         line_items: list[InvoiceLineItem],
     ) -> list[GoodsDescriptionEntry]:
-        if self.mode == "openai" and not self.api_key:
-            raise DescriptionGenerationError("OPENAI_API_KEY is required when DESCRIPTION_GENERATION_MODE=openai")
-
-        if self.mode in {"openai", "hybrid"} and self._openai_client:
-            try:
-                descriptions = await self._generate_with_openai(line_items)
-                self._validate_descriptions(line_items, descriptions)
-                return descriptions
-            except Exception as exc:
-                if self.mode == "openai":
-                    raise DescriptionGenerationError(
-                        f"OpenAI description generation failed: {exc}"
-                    ) from exc
-                logger.warning("OpenAI generation failed, falling back to templates: %s", exc)
-
-        descriptions = self._generate_with_templates(line_items)
-        self._validate_descriptions(line_items, descriptions)
-        return descriptions
-
-    def _generate_with_templates(
-        self,
-        line_items: list[InvoiceLineItem],
-    ) -> list[GoodsDescriptionEntry]:
-        descriptions: list[GoodsDescriptionEntry] = []
-        for item in line_items:
-            description_en, description_pl = self._classify_description(item.item_name)
-            country = self._normalize_country(item.origin)
-            made_of = self._infer_material(item.item_name)
-            descriptions.append(
-                self._build_description_entry(
-                    item,
-                    description_en=description_en,
-                    description_pl=description_pl,
-                    made_of=made_of,
-                    made_in=country,
-                    country_of_origin=country,
-                    melt_and_pour=self._derive_melt_and_pour(made_of, country, country),
-                    manufacturer_data=self._infer_manufacturer(item.item_name, country),
-                )
+        if self.mode != "hybrid":
+            raise DescriptionGenerationError("DESCRIPTION_GENERATION_MODE must be set to 'hybrid'")
+        if not self.api_key or not self._openai_client:
+            raise DescriptionGenerationError(
+                "OPENAI_API_KEY is required when DESCRIPTION_GENERATION_MODE=hybrid"
             )
+
+        try:
+            descriptions = await self._generate_with_openai(line_items)
+        except Exception as exc:
+            raise DescriptionGenerationError(
+                f"OpenAI description generation failed: {exc}"
+            ) from exc
+
+        self._validate_descriptions(line_items, descriptions)
         return descriptions
 
     async def _generate_with_openai(
@@ -102,6 +72,8 @@ class GoodsDescriptionGenerator:
 
         response = await self._openai_client.responses.create(
             model=self.model,
+            tools=[{"type": "web_search"}],
+            tool_choice="required",
             input=build_goods_description_prompt(payload),
         )
         data = json.loads(response.output_text)
@@ -146,8 +118,6 @@ class GoodsDescriptionGenerator:
                     ),
                     manufacturer_data=self._normalize_manufacturer_data(
                         entry.get("manufacturer_data"),
-                        item_name=source_item.item_name,
-                        country=normalized_country_of_origin,
                     ),
                 )
             )
@@ -175,52 +145,37 @@ class GoodsDescriptionGenerator:
                 raise DescriptionGenerationError(
                     f"Description text is empty for line {description.line_no}"
                 )
-            if self._contains_banned_words(description.description_en):
-                raise DescriptionGenerationError(
-                    f"English description contains a banned material word for line {description.line_no}"
-                )
-            if self._contains_banned_words(description.description_pl):
-                raise DescriptionGenerationError(
-                    f"Polish description contains a banned material word for line {description.line_no}"
-                )
-            if self._contains_banned_words(description.made_of):
-                raise DescriptionGenerationError(
-                    f"made_of contains a banned material word for line {description.line_no}"
-                )
             for field_name in (
+                "description_en",
+                "description_pl",
                 "made_of",
                 "made_in",
                 "country_of_origin",
                 "melt_and_pour",
-                "manufacturer_data",
             ):
-                if not getattr(description, field_name).strip():
+                value = getattr(description, field_name)
+                if not value.strip():
                     raise DescriptionGenerationError(
                         f"{field_name} is empty for line {description.line_no}"
                     )
-
-    def _classify_description(self, item_name: str) -> tuple[str, str]:
-        normalized = self._sanitize_for_matching(item_name)
-        for keywords, labels in DESCRIPTION_RULES:
-            if any(keyword in normalized for keyword in keywords):
-                return labels
-        return (
-            "Household accessory intended for everyday use.",
-            "Akcesorium domowe przeznaczone do codziennego uzytku.",
-        )
+                if self._contains_banned_words(value):
+                    raise DescriptionGenerationError(
+                        f"{field_name} contains a banned material word for line {description.line_no}"
+                    )
 
     def _build_openai_payload_item(self, item: InvoiceLineItem) -> dict[str, object]:
         return {
             "line_no": item.line_no,
             "item_name": item.item_name,
             "hs_code": item.hs_code,
-            "origin": item.origin,
+            "invoice_origin_hint": item.origin,
             "currency": item.currency,
             "quantity": item.quantity,
             "unit_price": item.unit_price,
             "line_value": item.line_value,
             "unit_net_weight_kg": item.unit_net_weight_kg,
             "total_net_weight_kg": item.total_net_weight_kg,
+            "source_text": item.source_text,
         }
 
     def _build_description_entry(
@@ -260,9 +215,7 @@ class GoodsDescriptionGenerator:
         return collapse_whitespace(cleaned)
 
     def _sanitize_description(self, value: str) -> str:
-        cleaned = value.strip()
-        for banned_word in BANNED_WORDS:
-            cleaned = re.sub(rf"\b{re.escape(banned_word)}\b", "", cleaned, flags=re.IGNORECASE)
+        cleaned = self._strip_banned_words(value.strip())
         cleaned = re.sub(r"\bprofessional\b", "home", cleaned, flags=re.IGNORECASE)
         return collapse_whitespace(cleaned)
 
@@ -275,8 +228,11 @@ class GoodsDescriptionGenerator:
     def _normalize_country(self, origin: str) -> str:
         if not origin or not origin.strip():
             return "N/A"
-        normalized = origin.strip().upper()
-        return COUNTRY_MAP.get(normalized, origin.strip())
+        cleaned = collapse_whitespace(origin.strip())
+        normalized = cleaned.upper()
+        if normalized in {"UNKNOWN", "N/A", "NA", "NOT APPLICABLE"}:
+            return "UNKNOWN"
+        return COUNTRY_MAP.get(normalized, cleaned)
 
     def _openai_country_fallback(self, origin: str) -> str:
         if not origin or not origin.strip():
@@ -284,19 +240,16 @@ class GoodsDescriptionGenerator:
         return self._normalize_country(origin)
 
     def _normalize_openai_country_field(self, value: str, fallback: str) -> str:
-        cleaned = clean_optional_text(value, fallback=fallback)
-        if cleaned.strip().upper() in {"N/A", "NA", "NOT APPLICABLE"}:
+        cleaned = clean_optional_text(value)
+        normalized = cleaned.strip().upper()
+        if normalized in {"", "N/A", "NA", "NOT APPLICABLE", "UNKNOWN"}:
+            cleaned = fallback
+        if not cleaned or cleaned.strip().upper() in {"", "N/A", "NA", "NOT APPLICABLE"}:
             return "UNKNOWN"
-        return cleaned
+        normalized_country = self._normalize_country(cleaned)
+        return normalized_country if normalized_country != "N/A" else "UNKNOWN"
 
-    def _infer_material(self, item_name: str) -> str:
-        normalized = self._sanitize_for_matching(item_name)
-        for keywords, material in MATERIAL_RULES:
-            if any(keyword in normalized for keyword in keywords):
-                return material
-        return "UNKNOWN"
-
-    def _infer_manufacturer(self, item_name: str, country: str) -> str:
+    def _infer_manufacturer(self, item_name: str) -> str:
         normalized = self._sanitize_for_matching(item_name)
         for keywords, manufacturer in MANUFACTURER_RULES:
             if any(keyword in normalized for keyword in keywords):
@@ -307,32 +260,37 @@ class GoodsDescriptionGenerator:
         cleaned = clean_optional_text(value, fallback="UNKNOWN")
         if cleaned.strip().upper() in {"N/A", "NA", "NOT APPLICABLE"}:
             return "UNKNOWN"
-        for banned_word in BANNED_WORDS:
-            cleaned = re.sub(rf"\b{re.escape(banned_word)}\b", "", cleaned, flags=re.IGNORECASE)
-        cleaned = collapse_whitespace(cleaned) or "UNKNOWN"
+        cleaned = collapse_whitespace(self._strip_banned_words(cleaned)) or "UNKNOWN"
         lowered = cleaned.lower()
+        if lowered in {"", "unknown"}:
+            return "UNKNOWN"
 
-        if "plastic" in lowered and "steel" in lowered:
-            return "Plastic/steel"
+        metal_present = self._contains_any_word(lowered, self.METAL_HINTS)
+        wood_present = self._contains_any_word(
+            lowered,
+            ("wood", "wooden", "timber", "bamboo", "plywood", "oak", "pine", "mahogany"),
+        )
+        non_metal_material = self._extract_primary_non_metal_material(lowered)
+        generic_mix_markers = (
+            "/",
+            "&",
+            " and ",
+            " with ",
+            " mixed ",
+            " composite ",
+            " blend",
+            " part",
+            " parts",
+        )
+        looks_mixed = any(marker in lowered for marker in generic_mix_markers)
 
-        slash_parts = [
-            part.strip()
-            for part in re.split(r"\s*/\s*|\s*&\s*|\s+and\s+", cleaned, flags=re.IGNORECASE)
-            if part.strip()
-        ]
-        if len(slash_parts) >= 2:
-            return f"{self._capitalize_material_word(slash_parts[0])}/{self._capitalize_material_word(slash_parts[1])}"
-
-        words = [
-            word
-            for word in re.findall(r"[A-Za-z]+", cleaned)
-            if word.lower() not in {"made", "of", "with", "from", "and"}
-        ]
-        if len(words) >= 2:
-            return f"{self._capitalize_material_word(words[0])}/{self._capitalize_material_word(words[1])}"
-        if len(words) == 1:
-            return self._capitalize_material_word(words[0])
-        return cleaned
+        if metal_present and not non_metal_material and not wood_present and not looks_mixed:
+            return "steel"
+        if wood_present and not non_metal_material and not metal_present:
+            return "composite"
+        if metal_present or wood_present:
+            return non_metal_material or "composite"
+        return non_metal_material or "composite"
 
     def _derive_melt_and_pour(
         self,
@@ -360,27 +318,42 @@ class GoodsDescriptionGenerator:
     def _normalize_manufacturer_data(
         self,
         value: Any,
-        *,
-        item_name: str,
-        country: str,
     ) -> str:
-        cleaned = clean_optional_text(value)
-        if self._looks_like_address(cleaned):
-            return cleaned
-        return self._infer_manufacturer(item_name, country)
+        cleaned = self._sanitize_manufacturer_data(clean_optional_text(value))
+        if cleaned.upper() in {"UNKNOWN", "N/A"}:
+            return ""
+        return cleaned
 
-    def _looks_like_address(self, value: str) -> bool:
-        if not value:
-            return False
-        normalized = value.strip()
-        if normalized.upper() in {"UNKNOWN", "N/A"}:
-            return False
-        if "," in normalized and re.search(r"\d", normalized):
-            return True
-        return bool(re.search(r"\b(street|strasse|straße|road|avenue|ave|blvd|lane|gasse)\b", normalized, re.IGNORECASE))
+    def _strip_banned_words(self, value: str) -> str:
+        cleaned = value
+        for banned_word in BANNED_WORDS:
+            cleaned = re.sub(rf"\b{re.escape(banned_word)}\b", "", cleaned, flags=re.IGNORECASE)
+        return cleaned
 
-    def _capitalize_material_word(self, value: str) -> str:
-        lowered = value.strip().lower()
-        if not lowered:
-            return "Unknown"
-        return lowered[0].upper() + lowered[1:]
+    def _sanitize_manufacturer_data(self, value: str) -> str:
+        cleaned = value.strip()
+        cleaned = re.split(r"\s*\(\[", cleaned, maxsplit=1)[0]
+        cleaned = collapse_whitespace(cleaned)
+        return cleaned.strip(" ,;.")
+
+    def _contains_any_word(self, value: str, words: tuple[str, ...]) -> bool:
+        return any(
+            re.search(rf"(?<![A-Za-z]){re.escape(word)}(?![A-Za-z])", value, flags=re.IGNORECASE)
+            for word in words
+        )
+
+    def _extract_primary_non_metal_material(self, value: str) -> str:
+        material_map = (
+            (("plastic", "polymer", "pp", "pe", "pvc", "abs", "resin"), "plastic"),
+            (("paper", "cardboard", "card", "kraft", "pulp"), "paper"),
+            (("rubber", "latex", "silicone", "silicon"), "rubber"),
+            (("textile", "fabric", "cotton", "polyester", "nylon", "felt", "wool"), "textile"),
+            (("leather", "pu leather", "faux leather"), "leather"),
+            (("glass",), "glass"),
+            (("ceramic", "porcelain"), "ceramic"),
+            (("stone", "marble", "granite"), "stone"),
+        )
+        for keywords, material in material_map:
+            if self._contains_any_word(value, keywords):
+                return material
+        return ""

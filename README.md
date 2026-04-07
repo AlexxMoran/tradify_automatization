@@ -41,18 +41,18 @@ Required in production:
 - `API_KEY`
 - `BASELINKER_API_TOKEN`
 - `DESCRIPTION_GENERATION_MODE`
-
-Optional, depending on generation mode:
-
 - `OPENAI_API_KEY`
+
+Optional:
+
 - `OPENAI_MODEL`
 - `BASELINKER_API_URL`
 - `BASELINKER_TIMEOUT_SECONDS`
 
 Notes:
 
-- Use `DESCRIPTION_GENERATION_MODE=template` if you want to avoid OpenAI.
-- Use `DESCRIPTION_GENERATION_MODE=hybrid` or `openai` only when `OPENAI_API_KEY` is configured.
+- Use `DESCRIPTION_GENERATION_MODE=hybrid`.
+- `OPENAI_API_KEY` is required because goods description generation is AI-only.
 
 ## Docker
 
@@ -89,7 +89,7 @@ Create these secrets in Secret Manager:
 - `invoice-builder-baselinker-token`
 - `invoice-builder-openai-api-key`
 
-You can skip the OpenAI secret if you use `DESCRIPTION_GENERATION_MODE=template`.
+The OpenAI secret is required because `DESCRIPTION_GENERATION_MODE=hybrid` is the supported mode.
 
 ### 3. Deploy
 

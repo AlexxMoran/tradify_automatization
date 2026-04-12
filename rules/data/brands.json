@@ -1,0 +1,425 @@
+[
+  {
+    "id": "thule",
+    "keywords": ["thule"],
+    "brand_name": "Thule",
+    "manufacturer_name": "Thule Group AB",
+    "country_of_origin": "Sweden",
+    "manufacturer_data": "Thule Group AB, Fosievagen 13, 214 31 Malmo, Sweden",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "continental",
+    "keywords": ["continental"],
+    "brand_name": "Continental",
+    "manufacturer_name": "Continental Reifen Deutschland GmbH",
+    "country_of_origin": "Germany",
+    "manufacturer_data": "Continental Reifen Deutschland GmbH, Vahrenwalder Strasse 9, 30165 Hannover, Germany",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "schwalbe",
+    "keywords": ["schwalbe"],
+    "brand_name": "Schwalbe",
+    "manufacturer_name": "Ralf Bohle GmbH",
+    "country_of_origin": "Germany",
+    "manufacturer_data": "Schwalbe / Ralf Bohle GmbH, Otto-Hahn-Strasse 1, 51580 Reichshof, Germany",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "pirelli",
+    "keywords": ["pirelli"],
+    "brand_name": "Pirelli",
+    "manufacturer_name": "Pirelli Tyre S.p.A.",
+    "country_of_origin": "Italy",
+    "manufacturer_data": "Pirelli Tyre S.p.A., Viale Piero e Alberto Pirelli 25, 20126 Milano, Italy",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "wippermann",
+    "keywords": ["wippermann", "connex"],
+    "brand_name": "Wippermann / ConneX",
+    "manufacturer_name": "Wippermann jr. GmbH",
+    "country_of_origin": "Germany",
+    "manufacturer_data": "Wippermann jr. GmbH, Delsterner Strasse 133, 58091 Hagen, Germany",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "kuchenprofi",
+    "keywords": ["kuchenprofi"],
+    "brand_name": "Kuchenprofi",
+    "manufacturer_name": "Kuchenprofi GmbH & Co. KG",
+    "country_of_origin": "Germany",
+    "manufacturer_data": "Kuchenprofi GmbH & Co. KG, Hansastrasse 2, 59425 Unna, Germany",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "lurch",
+    "keywords": ["lurch"],
+    "brand_name": "Lurch",
+    "manufacturer_name": "Lurch GmbH & Co. KG",
+    "country_of_origin": "Germany",
+    "manufacturer_data": "Lurch GmbH & Co. KG, Am Hummelsberg 3, 32699 Extertal, Germany",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "wittner",
+    "keywords": ["wittner"],
+    "brand_name": "Wittner",
+    "manufacturer_name": "Wittner GmbH & Co. KG",
+    "country_of_origin": "Germany",
+    "manufacturer_data": "Wittner GmbH & Co. KG, Rontgenstrasse 6, 83064 Raubling, Germany",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "kleiber",
+    "keywords": ["kleiber"],
+    "brand_name": "Kleiber",
+    "manufacturer_name": "Kleiber & Co. GmbH",
+    "country_of_origin": "Germany",
+    "manufacturer_data": "Kleiber & Co. GmbH, Halskestrasse 11, 47877 Willich, Germany",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "prym",
+    "keywords": ["prym"],
+    "brand_name": "Prym",
+    "manufacturer_name": "Prym Consumer Europe GmbH",
+    "country_of_origin": "Germany",
+    "manufacturer_data": "Prym Consumer Europe GmbH, Zweifaller Strasse 130, 52224 Stolberg, Germany",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "schmetz",
+    "keywords": ["schmetz"],
+    "brand_name": "Schmetz",
+    "manufacturer_name": "Ferd. Schmetz GmbH",
+    "country_of_origin": "Germany",
+    "manufacturer_data": "Ferd. Schmetz GmbH, Remigiusstrasse 1, 52353 Duren, Germany",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "freudenberg",
+    "keywords": ["vilene", "freudenberg"],
+    "brand_name": "Vilene / Freudenberg",
+    "manufacturer_name": "Freudenberg Performance Materials SE & Co. KG",
+    "country_of_origin": "Germany",
+    "manufacturer_data": "Freudenberg Performance Materials SE & Co. KG, Weinheimer Strasse 88, 69469 Weinheim, Germany",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "knitpro",
+    "keywords": ["knitpro"],
+    "brand_name": "KnitPro",
+    "manufacturer_name": "KP Needlecraft Pvt. Ltd.",
+    "country_of_origin": "India",
+    "manufacturer_data": "KnitPro / KP Needlecraft Pvt. Ltd., 104, GIDC Industrial Estate, Bhavnagar 364002, India",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "tulip",
+    "keywords": ["tulip"],
+    "brand_name": "Tulip",
+    "manufacturer_name": "Tulip Co., Ltd.",
+    "country_of_origin": "Japan",
+    "manufacturer_data": "Tulip Co., Ltd., 1-5-1 Motomachi, Naka-ku, Hiroshima 730-0011, Japan",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "lantern_moon",
+    "keywords": ["lantern moon"],
+    "brand_name": "Lantern Moon",
+    "manufacturer_name": "Lantern Moon",
+    "country_of_origin": "United States",
+    "manufacturer_data": "Lantern Moon, 16655 SW 72nd Ave, Portland, OR 97224, USA",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "jumbo",
+    "keywords": ["jumbo", "van haasteren"],
+    "brand_name": "Jumbo / Van Haasteren",
+    "manufacturer_name": "Jumbo Spellen B.V.",
+    "country_of_origin": "Netherlands",
+    "manufacturer_data": "Jumbo Spellen B.V., Postbus 3, 5240 AA Rosmalen, Netherlands",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "epoch",
+    "keywords": ["epoch", "sylvanian"],
+    "brand_name": "Epoch / Sylvanian Families",
+    "manufacturer_name": "Epoch Co., Ltd.",
+    "country_of_origin": "Japan",
+    "manufacturer_data": "Epoch Co., Ltd., 3-4-6 Koishikawa, Bunkyo-ku, Tokyo 112-8575, Japan",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "winkee",
+    "keywords": ["winkee"],
+    "brand_name": "Winkee",
+    "manufacturer_name": "Winkee GmbH",
+    "country_of_origin": "Germany",
+    "manufacturer_data": "Winkee GmbH, Bahnhofstrasse 10, 63814 Mainaschaff, Germany",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "plus_plus",
+    "keywords": ["plus-plus", "plus plus"],
+    "brand_name": "Plus-Plus",
+    "manufacturer_name": "Plus-Plus A/S",
+    "country_of_origin": "Denmark",
+    "manufacturer_data": "Plus-Plus A/S, Naverland 2, 2600 Glostrup, Denmark",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "paladone",
+    "keywords": ["paladone"],
+    "brand_name": "Paladone",
+    "manufacturer_name": "Paladone Products Ltd.",
+    "country_of_origin": "United Kingdom",
+    "manufacturer_data": "Paladone Products Ltd., Hove Business Centre, Fonthill Road, Hove BN3 6HA, United Kingdom",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "numskull",
+    "keywords": ["numskull", "tubbz"],
+    "brand_name": "Numskull / TUBBZ",
+    "manufacturer_name": "Numskull Designs Ltd.",
+    "country_of_origin": "United Kingdom",
+    "manufacturer_data": "Numskull Designs Ltd., Unit 1 Sheaf Close, Harlescott Industrial Estate, Shrewsbury SY1 3GB, United Kingdom",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "days_of_wonder",
+    "keywords": ["days of wonder", "ticket to ride"],
+    "brand_name": "Days of Wonder",
+    "manufacturer_name": "Days of Wonder, Inc.",
+    "country_of_origin": "United States",
+    "manufacturer_data": "Days of Wonder, Inc., 1334 Disk Drive, Medford, OR 97501, USA",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "capcom",
+    "keywords": ["capcom"],
+    "brand_name": "Capcom",
+    "manufacturer_name": "Capcom Co., Ltd.",
+    "country_of_origin": "Japan",
+    "manufacturer_data": "Capcom Co., Ltd., 3-1-3 Uchihirano-machi, Chuo-ku, Osaka 540-0037, Japan",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "sega",
+    "keywords": ["sega"],
+    "brand_name": "SEGA",
+    "manufacturer_name": "SEGA Corporation",
+    "country_of_origin": "Japan",
+    "manufacturer_data": "SEGA Corporation, 1-2-12 Haneda, Ohta-ku, Tokyo 144-8531, Japan",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "rebellion",
+    "keywords": ["rebellion"],
+    "brand_name": "Rebellion",
+    "manufacturer_name": "Rebellion Developments Ltd.",
+    "country_of_origin": "United Kingdom",
+    "manufacturer_data": "Rebellion Developments Ltd., Riverside House, 2 Millbank, Oxford OX2 0DP, United Kingdom",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "frontier",
+    "keywords": ["frontier developments", "frontier"],
+    "brand_name": "Frontier Developments",
+    "manufacturer_name": "Frontier Developments plc",
+    "country_of_origin": "United Kingdom",
+    "manufacturer_data": "Frontier Developments plc, 306 Science Park, Milton Road, Cambridge CB4 0WG, United Kingdom",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "merge_games",
+    "keywords": ["merge games"],
+    "brand_name": "Merge Games",
+    "manufacturer_name": "Merge Games Ltd.",
+    "country_of_origin": "United Kingdom",
+    "manufacturer_data": "Merge Games Ltd., Lakeside House, 1 Furzeground Way, Stockley Park, Uxbridge UB11 1BD, United Kingdom",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "maximum_games",
+    "keywords": ["maximum games"],
+    "brand_name": "Maximum Games",
+    "manufacturer_name": "Maximum Games",
+    "country_of_origin": "United States",
+    "manufacturer_data": "",
+    "strict_fields": ["country_of_origin", "made_in"]
+  },
+  {
+    "id": "activision",
+    "keywords": ["activision"],
+    "brand_name": "Activision",
+    "manufacturer_name": "Activision Publishing, Inc.",
+    "country_of_origin": "United States",
+    "manufacturer_data": "Activision Publishing, Inc., 3100 Ocean Park Blvd, Santa Monica, CA 90405, USA",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "kalypso",
+    "keywords": ["kalypso"],
+    "brand_name": "Kalypso Media",
+    "manufacturer_name": "Kalypso Media Group GmbH",
+    "country_of_origin": "Germany",
+    "manufacturer_data": "Kalypso Media Group GmbH, Valentin-Linhof-Strasse 18, 81829 Munich, Germany",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "pqube",
+    "keywords": ["pqube"],
+    "brand_name": "PQube",
+    "manufacturer_name": "PQube Ltd.",
+    "country_of_origin": "United Kingdom",
+    "manufacturer_data": "PQube Ltd., The Arch, 48-52 Floodgate Street, Birmingham B5 5SL, United Kingdom",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "bitmap_bureau",
+    "keywords": ["bitmap bureau"],
+    "brand_name": "Bitmap Bureau",
+    "manufacturer_name": "Bitmap Bureau",
+    "country_of_origin": "United Kingdom",
+    "manufacturer_data": "",
+    "strict_fields": ["country_of_origin", "made_in"]
+  },
+  {
+    "id": "system_era",
+    "keywords": ["system era", "astroneer"],
+    "brand_name": "System Era",
+    "manufacturer_name": "System Era",
+    "country_of_origin": "United States",
+    "manufacturer_data": "",
+    "strict_fields": ["country_of_origin", "made_in"]
+  },
+  {
+    "id": "dovetail_games",
+    "keywords": ["dovetail games"],
+    "brand_name": "Dovetail Games",
+    "manufacturer_name": "Dovetail Games",
+    "country_of_origin": "United Kingdom",
+    "manufacturer_data": "",
+    "strict_fields": ["country_of_origin", "made_in"]
+  },
+  {
+    "id": "skybound_games",
+    "keywords": ["skybound games", "skybound"],
+    "brand_name": "Skybound Games",
+    "manufacturer_name": "Skybound Games LLC",
+    "country_of_origin": "United States",
+    "manufacturer_data": "Skybound Games LLC, 11400 W Olympic Blvd, Suite 1620, Los Angeles, CA 90064, USA",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "mindscape",
+    "keywords": ["mindscape"],
+    "brand_name": "Mindscape",
+    "manufacturer_name": "Mindscape",
+    "country_of_origin": "Netherlands",
+    "manufacturer_data": "",
+    "strict_fields": ["country_of_origin", "made_in"]
+  },
+  {
+    "id": "techland",
+    "keywords": ["techland"],
+    "brand_name": "Techland",
+    "manufacturer_name": "Techland Sp. z o.o.",
+    "country_of_origin": "Poland",
+    "manufacturer_data": "Techland Sp. z o.o., ul. Wysockiego 10, 51-609 Wroclaw, Poland",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "good_loot",
+    "keywords": ["good loot", "cenega"],
+    "brand_name": "Good Loot / Cenega",
+    "manufacturer_name": "Cenega Poland Sp. z o.o.",
+    "country_of_origin": "Poland",
+    "manufacturer_data": "Good Loot / Cenega Poland Sp. z o.o., ul. Wynalazek 4, 02-677 Warszawa, Poland",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "otl_technologies",
+    "keywords": ["otl technologies", "otl"],
+    "brand_name": "OTL Technologies",
+    "manufacturer_name": "OTL Technologies Ltd.",
+    "country_of_origin": "United Kingdom",
+    "manufacturer_data": "OTL Technologies Ltd., 4 The Courtyard, Eastern Road, Bracknell RG12 2XB, United Kingdom",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "universal_music",
+    "keywords": ["universal music", "umg"],
+    "brand_name": "Universal Music",
+    "manufacturer_name": "Universal Music Group",
+    "country_of_origin": "United States",
+    "manufacturer_data": "Universal Music Group, 2220 Colorado Avenue, Santa Monica, CA 90404, USA",
+    "strict_fields": ["country_of_origin", "made_in"]
+  },
+  {
+    "id": "warner_music_de",
+    "keywords": ["warner music germany", "warner music"],
+    "brand_name": "Warner Music Germany",
+    "manufacturer_name": "Warner Music Group Germany Holding GmbH",
+    "country_of_origin": "Germany",
+    "manufacturer_data": "Warner Music Group Germany Holding GmbH, Chausseestrasse 13, 10115 Berlin, Germany",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "sony_music_jp",
+    "keywords": ["sony music japan", "sony music"],
+    "brand_name": "Sony Music Japan",
+    "manufacturer_name": "Sony Music Entertainment (Japan) Inc.",
+    "country_of_origin": "Japan",
+    "manufacturer_data": "Sony Music Entertainment (Japan) Inc., 1-9-1 Higashishinagawa, Shinagawa-ku, Tokyo 140-0002, Japan",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "music_on_vinyl",
+    "keywords": ["music on vinyl"],
+    "brand_name": "Music on Vinyl",
+    "manufacturer_name": "Music on Vinyl B.V.",
+    "country_of_origin": "Netherlands",
+    "manufacturer_data": "Music on Vinyl B.V., Wilhelminaplein 24, 3072 DE Rotterdam, Netherlands",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "laced_records",
+    "keywords": ["laced records", "laced"],
+    "brand_name": "Laced Records",
+    "manufacturer_name": "Laced Records Ltd.",
+    "country_of_origin": "United Kingdom",
+    "manufacturer_data": "Laced Records Ltd., 30 Stamford Street, London SE1 9LQ, United Kingdom",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "eagle_records",
+    "keywords": ["eagle records"],
+    "brand_name": "Eagle Records",
+    "manufacturer_name": "Eagle Records",
+    "country_of_origin": "United Kingdom",
+    "manufacturer_data": "",
+    "strict_fields": ["country_of_origin", "made_in"]
+  },
+  {
+    "id": "zyx_music",
+    "keywords": ["zyx music", "zyx"],
+    "brand_name": "ZYX Music",
+    "manufacturer_name": "ZYX Music GmbH & Co. KG",
+    "country_of_origin": "Germany",
+    "manufacturer_data": "ZYX Music GmbH & Co. KG, Industriestrasse 24, 63755 Alzenau, Germany",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  },
+  {
+    "id": "nordisk_film",
+    "keywords": ["nordisk film"],
+    "brand_name": "Nordisk Film",
+    "manufacturer_name": "Nordisk Film A/S",
+    "country_of_origin": "Denmark",
+    "manufacturer_data": "Nordisk Film A/S, Mosedalsvej 14, 2500 Valby, Denmark",
+    "strict_fields": ["country_of_origin", "made_in", "manufacturer_data"]
+  }
+]

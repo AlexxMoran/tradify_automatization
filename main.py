@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from api import router as api_router
 from clients import BaseLinkerClient
 from core.config import get_settings
-from core.utils import log_unhandled_request_exception
+from core.helpers import log_unhandled_request_exception
 from services.goods_description import GoodsDescriptionGenerator
 
 logger = logging.getLogger(__name__)

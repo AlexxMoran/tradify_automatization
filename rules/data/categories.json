@@ -1,0 +1,104 @@
+[
+  {
+    "id": "thule_bicycle_mount",
+    "keywords": ["thule", "bike", "bicycle", "holder", "mount", "upright", "tower", "bar"],
+    "material_override": "Plastic",
+    "description_en_hint": "Describe as a Thule accessory for bicycle wall mounting holder and never mention roof rack, car, automotive, dachowy, roof, or samochodowy.",
+    "description_pl_hint": "Opisz jako akcesorium Thule do sciennego uchwytu rowerowego i nigdy nie wspominaj o dachu, samochodzie ani bagazniku dachowym.",
+    "strict_terms": ["bicycle wall mounting"],
+    "prompt_notes": ["Use bicycle wall mounting wording only for Thule products."]
+  },
+  {
+    "id": "video_game",
+    "keywords": ["ps4", "ps5", "xbox", "switch", "nintendo", "video game", "game", "steam"],
+    "material_override": "Plastic",
+    "description_en_hint": "Describe as a video game for the relevant console or PC, intended for household use.",
+    "description_pl_hint": "Opisz jako gre wideo na odpowiednia konsole lub PC, przeznaczona do uzytku domowego.",
+    "prompt_notes": ["For games, include the platform when it is available."]
+  },
+  {
+    "id": "vinyl_record",
+    "keywords": ["vinyl", "lp", "record", "12in"],
+    "material_override": "Plastic",
+    "description_en_hint": "Describe as a vinyl record for music playback, intended for household use.",
+    "description_pl_hint": "Opisz jako plyte winylowa do odtwarzania muzyki w uzytku domowym.",
+    "prompt_notes": ["Do not mention PVC or hazardous material wording."]
+  },
+  {
+    "id": "blu_ray",
+    "keywords": ["blu-ray", "bluray", "blu ray"],
+    "material_override": "Plastic",
+    "description_en_hint": "Describe as a Blu-ray disc for video playback, intended for household use.",
+    "description_pl_hint": "Opisz jako plyte Blu-ray do odtwarzania wideo w uzytku domowym."
+  },
+  {
+    "id": "bicycle_tyre",
+    "keywords": ["tyre", "tire", "reifen", "opona"],
+    "material_override": "Rubber",
+    "description_en_hint": "Describe as a bicycle tyre for the appropriate cycling use, intended for household use.",
+    "description_pl_hint": "Opisz jako opone rowerowa do odpowiedniego rodzaju jazdy, przeznaczona do uzytku domowego."
+  },
+  {
+    "id": "bicycle_tube",
+    "keywords": ["inner tube", "tube", "detka", "schrader", "presta", "dunlop"],
+    "material_override": "Rubber",
+    "description_en_hint": "Describe as a bicycle inner tube with the valve type if available, intended for household use.",
+    "description_pl_hint": "Opisz jako detke rowerowa z typem zaworu, przeznaczona do uzytku domowego."
+  },
+  {
+    "id": "valve_conversion",
+    "keywords": ["valve adapter", "valve conversion", "adapter presta", "adapter schrader"],
+    "material_override": "Plastic",
+    "description_en_hint": "Describe as a bicycle valve conversion kit for inflating bicycle tyres, intended for household use.",
+    "description_pl_hint": "Opisz jako zestaw do konwersji zaworu rowerowego, przeznaczony do uzytku domowego."
+  },
+  {
+    "id": "textile",
+    "keywords": ["textile", "fabric", "ribbon", "patch", "thread", "yarn", "lace", "tape", "felt"],
+    "material_override": "Textile",
+    "description_en_hint": "Describe the textile or sewing accessory and its household use.",
+    "description_pl_hint": "Opisz tekstylny lub szwalniczy produkt i jego zastosowanie domowe."
+  },
+  {
+    "id": "puzzle",
+    "keywords": ["puzzle", "jigsaw", "elementow", "pieces"],
+    "material_override": "Composite",
+    "description_en_hint": "Describe as a jigsaw puzzle with the piece count when available, intended for household use.",
+    "description_pl_hint": "Opisz jako puzzle z liczba elementow, przeznaczone do uzytku domowego."
+  },
+  {
+    "id": "board_game",
+    "keywords": ["board game", "gra planszowa", "ticket to ride"],
+    "material_override": "Composite",
+    "description_en_hint": "Describe as a board game for household use.",
+    "description_pl_hint": "Opisz jako gre planszowa do uzytku domowego."
+  },
+  {
+    "id": "toy",
+    "keywords": ["toy", "figurine", "figure", "sylvanian", "tubbz"],
+    "material_override": "Plastic",
+    "description_en_hint": "Describe as a toy or collectible figure for household use.",
+    "description_pl_hint": "Opisz jako zabawke lub figurke kolekcjonerska do uzytku domowego."
+  },
+  {
+    "id": "craft_tool",
+    "keywords": ["crochet", "hook", "needle", "knitting", "spokes"],
+    "material_override": "Plastic",
+    "description_en_hint": "Describe as a needlecraft or knitting accessory for household use.",
+    "description_pl_hint": "Opisz jako akcesorium do robotek recznych, przeznaczone do uzytku domowego."
+  },
+  {
+    "id": "music_accessory",
+    "keywords": ["metronome", "music stand", "chinrest", "violin", "guitar", "piano", "instrument"],
+    "material_override": "Plastic",
+    "description_en_hint": "Describe as a musical instrument accessory for household use.",
+    "description_pl_hint": "Opisz jako akcesorium do instrumentu muzycznego, przeznaczone do uzytku domowego."
+  },
+  {
+    "id": "headphones",
+    "keywords": ["headphones", "headset", "earphones"],
+    "material_override": "Plastic",
+    "description_en_hint": "Describe as headphones for household audio use.",
+    "description_pl_hint": "Opisz jako sluchawki do domowego uzytku audio."
+  }
+]

@@ -4,15 +4,24 @@ import json
 import re
 from typing import Any
 
-from rules.goods_description_prompt import build_goods_description_prompt
-from rules.goods_description_rules import (
-    BANNED_WORDS,
-    COUNTRY_MAP,
-    MANUFACTURER_RULES,
-)
 from core.config import get_settings
 from core.utils import clean_optional_text, collapse_whitespace
-from models import GoodsDescriptionEntry, InvoiceLineItem
+from models import GoodsDescriptionEntry, InvoiceLineItem, ParsedDocument, ResolvedRuleHints
+from rules.goods_description_prompt import (
+    build_goods_description_prompt,
+    build_goods_description_repair_prompt,
+)
+from rules.goods_description_rules import (
+    ADDRESS_STREET_HINTS,
+    ADDRESS_BANNED_ARTIFACTS,
+    ALLOWED_MATERIALS,
+    BANNED_MATERIAL_COMBINATIONS,
+    BANNED_WORDS,
+    COUNTRY_MAP,
+    PLACEHOLDER_VALUES,
+    THULE_FORBIDDEN_DESCRIPTION_TERMS,
+)
+from services.goods_rule_resolver import GoodsRuleResolver
 
 
 class DescriptionGenerationError(Exception):
@@ -20,17 +29,64 @@ class DescriptionGenerationError(Exception):
 
 
 class GoodsDescriptionGenerator:
+    REQUIRED_FIELDS = (
+        "description_en",
+        "description_pl",
+        "made_of",
+        "made_in",
+        "country_of_origin",
+        "manufacturer_data",
+    )
     METAL_HINTS = (
         "metal",
         "steel",
         "stainless",
         "iron",
-        "brass",
-        "zinc",
         "alloy",
+        "zinc",
         "tin",
         "nickel",
         "chrome",
+        "cast",
+    )
+    NON_METAL_HINTS = (
+        "plastic",
+        "polymer",
+        "pp",
+        "pe",
+        "pvc",
+        "vinyl",
+        "abs",
+        "resin",
+        "rubber",
+        "latex",
+        "silicone",
+        "silicon",
+        "tyre",
+        "tire",
+        "tube",
+        "detka",
+        "textile",
+        "fabric",
+        "cotton",
+        "polyester",
+        "nylon",
+        "felt",
+        "wool",
+        "thread",
+        "ribbon",
+        "patch",
+        "lace",
+        "yarn",
+        "paper",
+        "cardboard",
+        "card",
+        "puzzle",
+        "board game",
+        "gra planszowa",
+        "wood",
+        "wooden",
+        "bamboo",
     )
 
     def __init__(self) -> None:
@@ -38,14 +94,16 @@ class GoodsDescriptionGenerator:
         self.api_key = settings.openai_api_key
         self.model = settings.openai_model
         self.mode = settings.description_generation_mode.lower().strip() or "hybrid"
+        self._rule_resolver = GoodsRuleResolver()
         self._openai_client = None
         if self.api_key:
             from openai import AsyncOpenAI
+
             self._openai_client = AsyncOpenAI(api_key=self.api_key)
 
     async def generate(
         self,
-        line_items: list[InvoiceLineItem],
+        parsed_document: ParsedDocument,
     ) -> list[GoodsDescriptionEntry]:
         if self.mode != "hybrid":
             raise DescriptionGenerationError("DESCRIPTION_GENERATION_MODE must be set to 'hybrid'")
@@ -53,143 +111,204 @@ class GoodsDescriptionGenerator:
             raise DescriptionGenerationError(
                 "OPENAI_API_KEY is required when DESCRIPTION_GENERATION_MODE=hybrid"
             )
+        if not parsed_document.line_items:
+            raise DescriptionGenerationError("Parsed document does not contain any invoice line items")
 
         try:
-            descriptions = await self._generate_with_openai(line_items)
+            descriptions = await self._generate_with_openai(parsed_document)
         except Exception as exc:
             raise DescriptionGenerationError(
                 f"OpenAI description generation failed: {exc}"
             ) from exc
 
-        self._validate_descriptions(line_items, descriptions)
+        self._validate_descriptions(parsed_document.line_items, descriptions)
         return descriptions
 
     async def _generate_with_openai(
         self,
-        line_items: list[InvoiceLineItem],
+        parsed_document: ParsedDocument,
     ) -> list[GoodsDescriptionEntry]:
-        payload = [self._build_openai_payload_item(item) for item in line_items]
+        hints_by_line = {
+            item.line_no: self._rule_resolver.resolve(item)
+            for item in parsed_document.line_items
+        }
+        payload = [
+            self._build_openai_payload_item(item, hints_by_line[item.line_no])
+            for item in parsed_document.line_items
+        ]
 
+        raw_items = await self._request_items(
+            build_goods_description_prompt(
+                payload,
+                document_type=parsed_document.document_type,
+                document_ref=parsed_document.document_ref,
+            )
+        )
+        descriptions = self._merge_descriptions(parsed_document.line_items, hints_by_line, raw_items)
+
+        invalid_items = self._collect_invalid_items(parsed_document.line_items, descriptions, hints_by_line)
+        if invalid_items:
+            repaired_raw_items = await self._request_items(
+                build_goods_description_repair_prompt(
+                    invalid_items,
+                    document_type=parsed_document.document_type,
+                    document_ref=parsed_document.document_ref,
+                )
+            )
+            repaired_by_line = {
+                int(item["line_no"]): item
+                for item in repaired_raw_items
+                if isinstance(item, dict) and item.get("line_no") is not None
+            }
+            descriptions = self._merge_descriptions(
+                parsed_document.line_items,
+                hints_by_line,
+                raw_items,
+                repaired_by_line=repaired_by_line,
+            )
+
+        return descriptions
+
+    async def _request_items(self, prompt: str) -> list[dict[str, Any]]:
         response = await self._openai_client.responses.create(
             model=self.model,
             tools=[{"type": "web_search"}],
             tool_choice="required",
-            input=build_goods_description_prompt(payload),
+            input=prompt,
         )
-        data = json.loads(response.output_text)
-        items = data.get("items")
-        if not isinstance(items, list):
-            raise DescriptionGenerationError("OpenAI response does not contain a valid items array")
+        items = self._parse_openai_items(response.output_text)
+        return [item for item in items if isinstance(item, dict)]
 
-        descriptions: list[GoodsDescriptionEntry] = []
-        source_by_line = {item.line_no: item for item in line_items}
-        for entry in items:
-            line_no = int(entry["line_no"])
-            source_item = source_by_line.get(line_no)
-            if source_item is None:
-                raise DescriptionGenerationError(f"OpenAI returned an unknown line number: {line_no}")
-            country_fallback = self._openai_country_fallback(source_item.origin)
-            made_in = clean_optional_text(
-                entry.get("made_in"),
-                fallback=country_fallback,
-            )
-            country_of_origin = clean_optional_text(
-                entry.get("country_of_origin"),
-                fallback=country_fallback,
-            )
-            normalized_made_of = self._normalize_material_field(entry.get("made_of"))
-            normalized_made_in = self._normalize_openai_country_field(made_in, country_fallback)
-            normalized_country_of_origin = self._normalize_openai_country_field(
-                country_of_origin,
-                country_fallback,
-            )
-            descriptions.append(
-                self._build_description_entry(
-                    source_item,
-                    description_en=self._sanitize_description(str(entry["description_en"])),
-                    description_pl=self._sanitize_description(str(entry["description_pl"])),
-                    made_of=normalized_made_of,
-                    made_in=normalized_made_in,
-                    country_of_origin=normalized_country_of_origin,
-                    melt_and_pour=self._derive_melt_and_pour(
-                        normalized_made_of,
-                        normalized_made_in,
-                        normalized_country_of_origin,
-                    ),
-                    manufacturer_data=self._normalize_manufacturer_data(
-                        entry.get("manufacturer_data"),
-                    ),
-                )
-            )
-        return descriptions
+    def _parse_openai_items(self, output_text: str) -> list[Any]:
+        normalized = clean_optional_text(output_text)
+        if not normalized:
+            raise DescriptionGenerationError("OpenAI response is empty")
 
-    def _validate_descriptions(
+        data = self._load_json_payload(normalized)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            items = data.get("items")
+            if isinstance(items, list):
+                return items
+        raise DescriptionGenerationError("OpenAI response does not contain a valid items array")
+
+    def _load_json_payload(self, output_text: str) -> Any:
+        candidates = [output_text]
+
+        fenced_match = re.search(r"```(?:json)?\s*(.+?)\s*```", output_text, flags=re.DOTALL | re.IGNORECASE)
+        if fenced_match:
+            candidates.insert(0, fenced_match.group(1).strip())
+
+        for start_char, end_char in (("{", "}"), ("[", "]")):
+            start = output_text.find(start_char)
+            end = output_text.rfind(end_char)
+            if start != -1 and end != -1 and end > start:
+                candidates.append(output_text[start : end + 1])
+
+        seen: set[str] = set()
+        for candidate in candidates:
+            candidate = candidate.strip()
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+
+        raise DescriptionGenerationError("OpenAI response is not valid JSON")
+
+    def _merge_descriptions(
         self,
         line_items: list[InvoiceLineItem],
-        descriptions: list[GoodsDescriptionEntry],
-    ) -> None:
-        if len(line_items) != len(descriptions):
-            raise DescriptionGenerationError(
-                "Description count does not match invoice line count; PDF generation aborted"
-            )
-
-        expected_lines = [item.line_no for item in line_items]
-        actual_lines = [item.line_no for item in descriptions]
-        if expected_lines != actual_lines:
-            raise DescriptionGenerationError(
-                "Description line order does not match invoice line order"
-            )
-
-        for description in descriptions:
-            if not description.description_en.strip() or not description.description_pl.strip():
-                raise DescriptionGenerationError(
-                    f"Description text is empty for line {description.line_no}"
-                )
-            for field_name in (
-                "description_en",
-                "description_pl",
-                "made_of",
-                "made_in",
-                "country_of_origin",
-                "melt_and_pour",
-            ):
-                value = getattr(description, field_name)
-                if not value.strip():
-                    raise DescriptionGenerationError(
-                        f"{field_name} is empty for line {description.line_no}"
-                    )
-                if self._contains_banned_words(value):
-                    raise DescriptionGenerationError(
-                        f"{field_name} contains a banned material word for line {description.line_no}"
-                    )
-
-    def _build_openai_payload_item(self, item: InvoiceLineItem) -> dict[str, object]:
-        return {
-            "line_no": item.line_no,
-            "item_name": item.item_name,
-            "hs_code": item.hs_code,
-            "invoice_origin_hint": item.origin,
-            "currency": item.currency,
-            "quantity": item.quantity,
-            "unit_price": item.unit_price,
-            "line_value": item.line_value,
-            "unit_net_weight_kg": item.unit_net_weight_kg,
-            "total_net_weight_kg": item.total_net_weight_kg,
-            "source_text": item.source_text,
+        hints_by_line: dict[int, ResolvedRuleHints],
+        raw_items: list[dict[str, Any]],
+        *,
+        repaired_by_line: dict[int, dict[str, Any]] | None = None,
+    ) -> list[GoodsDescriptionEntry]:
+        raw_by_line = {
+            int(item["line_no"]): item
+            for item in raw_items
+            if item.get("line_no") is not None
         }
+        repaired_by_line = repaired_by_line or {}
 
-    def _build_description_entry(
+        descriptions: list[GoodsDescriptionEntry] = []
+        for source_item in line_items:
+            hints = hints_by_line[source_item.line_no]
+            base_entry = raw_by_line.get(source_item.line_no, {})
+            repaired_entry = repaired_by_line.get(source_item.line_no, {})
+            entry = self._merge_openai_entry(source_item, hints, base_entry, repaired_entry)
+            descriptions.append(entry)
+        return descriptions
+
+    def _merge_openai_entry(
         self,
         item: InvoiceLineItem,
-        *,
-        description_en: str,
-        description_pl: str,
-        made_of: str,
-        made_in: str,
-        country_of_origin: str,
-        melt_and_pour: str,
-        manufacturer_data: str,
+        hints: ResolvedRuleHints,
+        base_entry: dict[str, Any],
+        repaired_entry: dict[str, Any],
     ) -> GoodsDescriptionEntry:
+        raw_entry = {**base_entry, **repaired_entry}
+        country_fallback = self._country_fallback(item.origin, hints)
+        country_of_origin = self._resolve_country_field(
+            raw_entry.get("country_of_origin"),
+            hint=hints.country_of_origin_hint,
+            invoice_origin=item.origin,
+        )
+        made_in = self._resolve_country_field(
+            raw_entry.get("made_in"),
+            hint=hints.made_in_hint or country_of_origin,
+            invoice_origin=item.origin,
+        )
+        if "made_in" in hints.strict_fields or not made_in:
+            made_in = country_of_origin
+
+        made_of = self._resolve_material_field(
+            raw_entry.get("made_of"),
+            hint=hints.made_of_hint,
+            item=item,
+        )
+        manufacturer_data = self._resolve_manufacturer_data(
+            raw_entry.get("manufacturer_data"),
+            hint=hints.manufacturer_data_hint,
+            invoice_origin=item.origin,
+            country_of_origin=country_of_origin,
+        )
+        description_en = self._resolve_description(
+            raw_entry.get("description_en"),
+            hint=hints.description_en_hint,
+            language="en",
+            category_key=hints.category_key,
+            item=item,
+        )
+        description_pl = self._resolve_description(
+            raw_entry.get("description_pl"),
+            hint=hints.description_pl_hint,
+            language="pl",
+            category_key=hints.category_key,
+            item=item,
+        )
+
+        if "country_of_origin" in hints.strict_fields and hints.country_of_origin_hint:
+            country_of_origin = hints.country_of_origin_hint
+        if "made_in" in hints.strict_fields and hints.made_in_hint:
+            made_in = hints.made_in_hint
+        if "manufacturer_data" in hints.strict_fields and hints.manufacturer_data_hint:
+            manufacturer_data = hints.manufacturer_data_hint
+
+        if not country_of_origin:
+            country_of_origin = country_fallback
+        if not made_in:
+            made_in = country_of_origin
+
+        manufacturer_data = manufacturer_data or hints.manufacturer_data_hint
+        made_of = made_of or hints.made_of_hint or self._fallback_material(item)
+        description_en = description_en or hints.description_en_hint
+        description_pl = description_pl or hints.description_pl_hint
+        melt_and_pour = self._derive_melt_and_pour(item, made_of, made_in)
+
         return GoodsDescriptionEntry(
             line_no=item.line_no,
             item_name=item.item_name,
@@ -208,127 +327,332 @@ class GoodsDescriptionGenerator:
             net_weight_kg=item.total_net_weight_kg,
         )
 
-    def _sanitize_for_matching(self, value: str) -> str:
-        cleaned = value.lower()
-        for banned_word in BANNED_WORDS:
-            cleaned = re.sub(rf"\b{re.escape(banned_word)}\b", "", cleaned, flags=re.IGNORECASE)
-        return collapse_whitespace(cleaned)
-
-    def _sanitize_description(self, value: str) -> str:
-        cleaned = self._strip_banned_words(value.strip())
-        cleaned = re.sub(r"\bprofessional\b", "home", cleaned, flags=re.IGNORECASE)
-        return collapse_whitespace(cleaned)
-
-    def _contains_banned_words(self, value: str) -> bool:
-        return any(
-            re.search(rf"\b{re.escape(banned_word)}\b", value, flags=re.IGNORECASE)
-            for banned_word in BANNED_WORDS
-        )
-
-    def _normalize_country(self, origin: str) -> str:
-        if not origin or not origin.strip():
-            return "N/A"
-        cleaned = collapse_whitespace(origin.strip())
-        normalized = cleaned.upper()
-        if normalized in {"UNKNOWN", "N/A", "NA", "NOT APPLICABLE"}:
-            return "UNKNOWN"
-        return COUNTRY_MAP.get(normalized, cleaned)
-
-    def _openai_country_fallback(self, origin: str) -> str:
-        if not origin or not origin.strip():
-            return "UNKNOWN"
-        return self._normalize_country(origin)
-
-    def _normalize_openai_country_field(self, value: str, fallback: str) -> str:
-        cleaned = clean_optional_text(value)
-        normalized = cleaned.strip().upper()
-        if normalized in {"", "N/A", "NA", "NOT APPLICABLE", "UNKNOWN"}:
-            cleaned = fallback
-        if not cleaned or cleaned.strip().upper() in {"", "N/A", "NA", "NOT APPLICABLE"}:
-            return "UNKNOWN"
-        normalized_country = self._normalize_country(cleaned)
-        return normalized_country if normalized_country != "N/A" else "UNKNOWN"
-
-    def _infer_manufacturer(self, item_name: str) -> str:
-        normalized = self._sanitize_for_matching(item_name)
-        for keywords, manufacturer in MANUFACTURER_RULES:
-            if any(keyword in normalized for keyword in keywords):
-                return manufacturer
-        return "UNKNOWN"
-
-    def _normalize_material_field(self, value: Any) -> str:
-        cleaned = clean_optional_text(value, fallback="UNKNOWN")
-        if cleaned.strip().upper() in {"N/A", "NA", "NOT APPLICABLE"}:
-            return "UNKNOWN"
-        cleaned = collapse_whitespace(self._strip_banned_words(cleaned)) or "UNKNOWN"
-        lowered = cleaned.lower()
-        if lowered in {"", "unknown"}:
-            return "UNKNOWN"
-
-        metal_present = self._contains_any_word(lowered, self.METAL_HINTS)
-        wood_present = self._contains_any_word(
-            lowered,
-            ("wood", "wooden", "timber", "bamboo", "plywood", "oak", "pine", "mahogany"),
-        )
-        non_metal_material = self._extract_primary_non_metal_material(lowered)
-        generic_mix_markers = (
-            "/",
-            "&",
-            " and ",
-            " with ",
-            " mixed ",
-            " composite ",
-            " blend",
-            " part",
-            " parts",
-        )
-        looks_mixed = any(marker in lowered for marker in generic_mix_markers)
-
-        if metal_present and not non_metal_material and not wood_present and not looks_mixed:
-            return "steel"
-        if wood_present and not non_metal_material and not metal_present:
-            return "composite"
-        if metal_present or wood_present:
-            return non_metal_material or "composite"
-        return non_metal_material or "composite"
-
-    def _derive_melt_and_pour(
+    def _validate_descriptions(
         self,
-        made_of: str,
-        made_in: str,
-        country_of_origin: str,
-    ) -> str:
-        normalized = collapse_whitespace(made_of).lower()
-        if not normalized:
-            return "N/A"
-        if not any(hint in normalized for hint in self.METAL_HINTS):
-            return "N/A"
+        line_items: list[InvoiceLineItem],
+        descriptions: list[GoodsDescriptionEntry],
+    ) -> None:
+        if len(line_items) != len(descriptions):
+            raise DescriptionGenerationError(
+                "Description count does not match invoice line count; PDF generation aborted"
+            )
 
-        countries = [
-            value.strip()
-            for value in (made_in, country_of_origin)
-            if value and value.strip() and value.strip().upper() not in {"UNKNOWN", "N/A"}
-        ]
-        if not countries:
-            return "UNKNOWN"
-        if len(countries) == 1 or countries[0] == countries[-1]:
-            return countries[0]
-        return " / ".join(dict.fromkeys(countries))
+        expected_lines = [item.line_no for item in line_items]
+        actual_lines = [item.line_no for item in descriptions]
+        if expected_lines != actual_lines:
+            raise DescriptionGenerationError(
+                "Description line order does not match invoice line order"
+            )
 
-    def _normalize_manufacturer_data(
+        source_by_line = {item.line_no: item for item in line_items}
+        for description in descriptions:
+            source_item = source_by_line[description.line_no]
+            for field_name in self.REQUIRED_FIELDS:
+                value = getattr(description, field_name)
+                if self._is_placeholder(value):
+                    raise DescriptionGenerationError(
+                        f"{field_name} is empty or placeholder for line {description.line_no}"
+                    )
+            expected_melt_and_pour = self._expected_melt_and_pour(source_item, description.made_of, description.made_in)
+            if description.melt_and_pour != expected_melt_and_pour:
+                raise DescriptionGenerationError(
+                    f"melt_and_pour must be {expected_melt_and_pour} for line {description.line_no}"
+                )
+            if self._material_contains_banned_words(description.made_of):
+                raise DescriptionGenerationError(
+                    f"made_of contains banned wording for line {description.line_no}"
+                )
+            if not self._is_full_address(description.manufacturer_data):
+                raise DescriptionGenerationError(
+                    f"manufacturer_data is not a full address for line {description.line_no}"
+                )
+            if not description.description_en.endswith("intended for household use."):
+                raise DescriptionGenerationError(
+                    f"description_en does not have the required ending for line {description.line_no}"
+                )
+            if not self._has_valid_polish_suffix(description.description_pl):
+                raise DescriptionGenerationError(
+                    f"description_pl does not have the required ending for line {description.line_no}"
+                )
+            if self._address_mentions_china(description.manufacturer_data) and (
+                clean_optional_text(source_item.origin).upper() == "CN"
+                or description.country_of_origin != "China"
+            ):
+                raise DescriptionGenerationError(
+                    f"manufacturer_data points to China for line {description.line_no}"
+                )
+
+    def _build_openai_payload_item(
+        self,
+        item: InvoiceLineItem,
+        hints: ResolvedRuleHints,
+    ) -> dict[str, object]:
+        return {
+            "line_no": item.line_no,
+            "item_name": item.item_name,
+            "hs_code": item.hs_code,
+            "invoice_origin_hint": item.origin or "",
+            "currency": item.currency,
+            "quantity": item.quantity,
+            "unit_price": item.unit_price,
+            "line_value": item.line_value,
+            "unit_net_weight_kg": item.unit_net_weight_kg,
+            "total_net_weight_kg": item.total_net_weight_kg,
+            "source_text": item.source_text,
+            "resolved_hints": hints.to_prompt_dict(),
+        }
+
+    def _collect_invalid_items(
+        self,
+        line_items: list[InvoiceLineItem],
+        descriptions: list[GoodsDescriptionEntry],
+        hints_by_line: dict[int, ResolvedRuleHints],
+    ) -> list[dict[str, object]]:
+        invalid_items: list[dict[str, object]] = []
+        description_by_line = {entry.line_no: entry for entry in descriptions}
+
+        for item in line_items:
+            description = description_by_line[item.line_no]
+            invalid_fields: list[str] = []
+            for field_name in self.REQUIRED_FIELDS:
+                if self._is_placeholder(getattr(description, field_name)):
+                    invalid_fields.append(field_name)
+            if self._material_contains_banned_words(description.made_of):
+                invalid_fields.append("made_of")
+            if not self._is_full_address(description.manufacturer_data):
+                invalid_fields.append("manufacturer_data")
+            if not description.description_en.endswith("intended for household use."):
+                invalid_fields.append("description_en")
+            if not self._has_valid_polish_suffix(description.description_pl):
+                invalid_fields.append("description_pl")
+            expected_melt_and_pour = self._expected_melt_and_pour(item, description.made_of, description.made_in)
+            if description.melt_and_pour != expected_melt_and_pour:
+                invalid_fields.append("melt_and_pour")
+
+            if invalid_fields:
+                invalid_items.append(
+                    {
+                        **self._build_openai_payload_item(item, hints_by_line[item.line_no]),
+                        "invalid_fields": sorted(set(invalid_fields)),
+                        "current_draft": {
+                            "description_en": description.description_en,
+                            "description_pl": description.description_pl,
+                            "made_of": description.made_of,
+                            "made_in": description.made_in,
+                            "country_of_origin": description.country_of_origin,
+                            "melt_and_pour": description.melt_and_pour,
+                            "manufacturer_data": description.manufacturer_data,
+                        },
+                    }
+                )
+        return invalid_items
+
+    def _resolve_country_field(self, value: Any, *, hint: str, invoice_origin: str | None) -> str:
+        raw = clean_optional_text(value)
+        if self._is_placeholder(raw):
+            raw = hint
+        if self._is_placeholder(raw):
+            raw = self._country_fallback(invoice_origin, None)
+        raw = clean_optional_text(raw)
+        normalized = COUNTRY_MAP.get(raw.upper(), raw)
+        if normalized == "China" and (clean_optional_text(invoice_origin).upper() == "CN" or (hint and hint != "China")):
+            if hint and hint != "China":
+                normalized = hint
+            else:
+                normalized = "Taiwan"
+        return collapse_whitespace(normalized)
+
+    def _country_fallback(self, invoice_origin: str | None, hints: ResolvedRuleHints | None) -> str:
+        if hints and hints.country_of_origin_hint:
+            return hints.country_of_origin_hint
+        if not invoice_origin:
+            return ""
+        normalized = collapse_whitespace(invoice_origin).upper()
+        mapped = COUNTRY_MAP.get(normalized, collapse_whitespace(invoice_origin))
+        if mapped == "China":
+            return "Taiwan"
+        return mapped
+
+    def _resolve_material_field(self, value: Any, *, hint: str, item: InvoiceLineItem) -> str:
+        raw = clean_optional_text(value)
+        if self._is_placeholder(raw):
+            raw = hint
+        raw = self._normalize_material(raw)
+        if self._looks_fully_metal(collapse_whitespace(f"{item.item_name} {item.source_text}").lower()):
+            return "Steel"
+        if raw:
+            return raw
+        hint_material = self._normalize_material(hint)
+        if hint_material:
+            return hint_material
+        return self._fallback_material(item)
+
+    def _fallback_material(self, item: InvoiceLineItem) -> str:
+        text = collapse_whitespace(f"{item.item_name} {item.source_text}").lower()
+        if self._looks_fully_metal(text):
+            return "Steel"
+        if any(word in text for word in ("rubber", "tyre", "tire", "tube", "detka")):
+            return "Rubber"
+        if any(word in text for word in ("textile", "fabric", "thread", "ribbon", "patch", "felt", "yarn")):
+            return "Textile"
+        if any(word in text for word in ("puzzle", "board game", "gra planszowa")):
+            return "Composite"
+        return "Plastic"
+
+    def _derive_melt_and_pour(self, item: InvoiceLineItem, made_of: str, made_in: str) -> str:
+        if self._is_fully_metal_material(made_of) or self._looks_fully_metal(
+            collapse_whitespace(f"{item.item_name} {item.source_text}").lower()
+        ):
+            return made_in
+        return "N/A"
+
+    def _expected_melt_and_pour(self, item: InvoiceLineItem, made_of: str, made_in: str) -> str:
+        if self._is_fully_metal_material(made_of) or self._looks_fully_metal(
+            collapse_whitespace(f"{item.item_name} {item.source_text}").lower()
+        ):
+            return made_in
+        return "N/A"
+
+    def _resolve_manufacturer_data(
         self,
         value: Any,
+        *,
+        hint: str,
+        invoice_origin: str | None,
+        country_of_origin: str,
     ) -> str:
-        cleaned = self._sanitize_manufacturer_data(clean_optional_text(value))
-        if cleaned.upper() in {"UNKNOWN", "N/A"}:
-            return ""
-        return cleaned
+        raw = self._sanitize_manufacturer_data(clean_optional_text(value))
+        if self._is_acceptable_address(raw, invoice_origin=invoice_origin, country_of_origin=country_of_origin):
+            return raw
+        hint = self._sanitize_manufacturer_data(hint)
+        if self._is_acceptable_address(hint, invoice_origin=invoice_origin, country_of_origin=country_of_origin):
+            return hint
+        return raw or hint
 
-    def _strip_banned_words(self, value: str) -> str:
-        cleaned = value
-        for banned_word in BANNED_WORDS:
-            cleaned = re.sub(rf"\b{re.escape(banned_word)}\b", "", cleaned, flags=re.IGNORECASE)
-        return cleaned
+    def _resolve_description(
+        self,
+        value: Any,
+        *,
+        hint: str,
+        language: str,
+        category_key: str,
+        item: InvoiceLineItem,
+    ) -> str:
+        raw = clean_optional_text(value)
+        if self._is_placeholder(raw):
+            raw = hint
+        raw = self._sanitize_description(raw, language=language, category_key=category_key)
+        if raw:
+            if category_key == "thule_bicycle_mount":
+                return self._build_category_fallback_description(
+                    item,
+                    language=language,
+                    category_key=category_key,
+                )
+            return raw
+        return self._build_category_fallback_description(
+            item,
+            language=language,
+            category_key=category_key,
+        )
+
+    def _sanitize_description(self, value: str, *, language: str, category_key: str) -> str:
+        cleaned = collapse_whitespace(value.strip())
+        cleaned = re.sub(r"\bprofessional\b", "household", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\bhome use use\b", "household use", cleaned, flags=re.IGNORECASE)
+        if category_key == "thule_bicycle_mount":
+            for term in THULE_FORBIDDEN_DESCRIPTION_TERMS:
+                cleaned = re.sub(re.escape(term), "bicycle wall mounting", cleaned, flags=re.IGNORECASE)
+
+        if language == "en":
+            if cleaned.lower().endswith("intended for household use."):
+                return collapse_whitespace(cleaned)
+            cleaned = re.sub(
+                r"(,?\s*)?intended for household use\.?$",
+                "",
+                cleaned,
+                flags=re.IGNORECASE,
+            ).strip(" ,.;")
+            cleaned = f"{cleaned}, intended for household use." if cleaned else "Product intended for household use."
+            return collapse_whitespace(cleaned)
+
+        if self._has_valid_polish_suffix(cleaned):
+            return collapse_whitespace(cleaned)
+        cleaned = re.sub(
+            r"(,?\s*)?przeznaczon(?:y|a|e)\s+do\s+uzytku\s+domowego\.?$",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        ).strip(" ,.;")
+        suffix = self._guess_polish_suffix(cleaned)
+        cleaned = f"{cleaned}, {suffix}" if cleaned else f"Produkt, {suffix}"
+        return collapse_whitespace(cleaned)
+
+    def _guess_polish_suffix(self, text: str) -> str:
+        lowered = text.lower()
+        if any(token in lowered for token in ("puzzle", "sluchawki", "druty", "gry", "akcesoria", "akcesorium")):
+            return "przeznaczone do uzytku domowego."
+        if any(token in lowered for token in ("opona", "detka", "gra", "plyta", "zabawka")):
+            return "przeznaczona do uzytku domowego."
+        return "przeznaczony do uzytku domowego."
+
+    def _has_valid_polish_suffix(self, value: str) -> bool:
+        lowered = value.lower()
+        return lowered.endswith("przeznaczony do uzytku domowego.") or lowered.endswith(
+            "przeznaczona do uzytku domowego."
+        ) or lowered.endswith("przeznaczone do uzytku domowego.")
+
+    def _normalize_material(self, value: str) -> str:
+        cleaned = clean_optional_text(value)
+        if self._is_placeholder(cleaned):
+            return ""
+        cleaned = re.sub(r"[(){}\[\]]", " ", cleaned)
+        cleaned = cleaned.replace("&", " and ")
+        if any(marker in cleaned.lower() for marker in BANNED_MATERIAL_COMBINATIONS):
+            return ""
+        return self._normalize_material_token(cleaned)
+
+    def _normalize_material_token(self, value: str) -> str:
+        token = collapse_whitespace(value)
+        token = re.sub(r"[^A-Za-z0-9 -]", " ", token)
+        token = collapse_whitespace(token)
+        if not token:
+            return ""
+        lowered = token.lower()
+        if self._looks_fully_metal(lowered):
+            return "Steel"
+        if any(word in lowered.split() for word in BANNED_WORDS):
+            return ""
+        if any(marker in lowered for marker in BANNED_MATERIAL_COMBINATIONS):
+            return ""
+        if any(word in lowered for word in ("rubber", "latex", "silicone", "silicon", "tyre", "tire", "tube", "detka")):
+            return "Rubber"
+        if any(word in lowered for word in ("textile", "fabric", "cotton", "polyester", "nylon", "felt", "wool", "thread", "ribbon", "patch", "lace", "yarn")):
+            return "Textile"
+        if any(word in lowered for word in ("composite", "paper", "cardboard", "card", "puzzle", "board game", "gra planszowa")):
+            return "Composite"
+        if any(word in lowered for word in ("plastic", "polymer", "pp", "pe", "pvc", "vinyl", "abs", "resin")):
+            return "Plastic"
+        return "Plastic"
+
+    def _material_contains_banned_words(self, value: str) -> bool:
+        lowered = value.lower()
+        if any(word in lowered.split() for word in BANNED_WORDS):
+            return True
+        if any(marker in lowered for marker in BANNED_MATERIAL_COMBINATIONS):
+            return True
+        return value not in ALLOWED_MATERIALS
+
+    def _is_fully_metal_material(self, value: str) -> bool:
+        return collapse_whitespace(value) == "Steel"
+
+    def _looks_fully_metal(self, text: str) -> bool:
+        normalized = collapse_whitespace(text).lower()
+        if not normalized:
+            return False
+        if not any(hint in normalized for hint in self.METAL_HINTS):
+            return False
+        return not any(hint in normalized for hint in self.NON_METAL_HINTS)
 
     def _sanitize_manufacturer_data(self, value: str) -> str:
         cleaned = value.strip()
@@ -336,24 +660,157 @@ class GoodsDescriptionGenerator:
         cleaned = collapse_whitespace(cleaned)
         return cleaned.strip(" ,;.")
 
-    def _contains_any_word(self, value: str, words: tuple[str, ...]) -> bool:
-        return any(
-            re.search(rf"(?<![A-Za-z]){re.escape(word)}(?![A-Za-z])", value, flags=re.IGNORECASE)
-            for word in words
-        )
+    def _contains_address_artifacts(self, value: str) -> bool:
+        lowered = self._sanitize_manufacturer_data(value).lower()
+        if not lowered:
+            return False
+        if any(token in lowered for token in ADDRESS_BANNED_ARTIFACTS):
+            return True
+        if re.search(r"\b\S+@\S+\b", lowered):
+            return True
+        if re.search(r"\b[a-z0-9._-]+@[a-z0-9._-]+\b", lowered):
+            return True
+        return False
 
-    def _extract_primary_non_metal_material(self, value: str) -> str:
-        material_map = (
-            (("plastic", "polymer", "pp", "pe", "pvc", "abs", "resin"), "plastic"),
-            (("paper", "cardboard", "card", "kraft", "pulp"), "paper"),
-            (("rubber", "latex", "silicone", "silicon"), "rubber"),
-            (("textile", "fabric", "cotton", "polyester", "nylon", "felt", "wool"), "textile"),
-            (("leather", "pu leather", "faux leather"), "leather"),
-            (("glass",), "glass"),
-            (("ceramic", "porcelain"), "ceramic"),
-            (("stone", "marble", "granite"), "stone"),
-        )
-        for keywords, material in material_map:
-            if self._contains_any_word(value, keywords):
-                return material
+    def _is_full_address(self, value: str) -> bool:
+        cleaned = self._sanitize_manufacturer_data(value)
+        if self._is_placeholder(cleaned):
+            return False
+        if self._contains_address_artifacts(cleaned):
+            return False
+        parts = [part.strip() for part in cleaned.split(",") if part.strip()]
+        if len(parts) < 4:
+            return False
+        country_part = parts[-1]
+        locality_part = parts[-2]
+        street_parts = parts[1:-1]
+        street_text = " ".join(street_parts).lower()
+        if any(char.isdigit() for char in country_part):
+            return False
+        if not re.search(r"\d", locality_part):
+            return False
+        if not re.search(r"\d", street_text) and not any(hint in street_text for hint in ADDRESS_STREET_HINTS):
+            return False
+        return True
+
+    def _is_acceptable_address(
+        self,
+        value: str,
+        *,
+        invoice_origin: str | None,
+        country_of_origin: str,
+    ) -> bool:
+        if not self._is_full_address(value):
+            return False
+        if self._address_mentions_china(value) and (
+            clean_optional_text(invoice_origin).upper() == "CN" or country_of_origin != "China"
+        ):
+            return False
+        return True
+
+    def _address_mentions_china(self, value: str) -> bool:
+        lowered = self._sanitize_manufacturer_data(value).lower()
+        return " china" in f" {lowered}" or lowered.endswith("china")
+
+    def _is_placeholder(self, value: str | None) -> bool:
+        if value is None:
+            return True
+        return collapse_whitespace(str(value)).upper() in PLACEHOLDER_VALUES
+
+    def _build_category_fallback_description(
+        self,
+        item: InvoiceLineItem,
+        *,
+        language: str,
+        category_key: str,
+    ) -> str:
+        item_name = collapse_whitespace(item.item_name)
+        platform = self._extract_platform(item_name)
+        valve = self._extract_valve_type(item_name)
+        puzzle_count = self._extract_puzzle_count(item_name)
+        style_en, style_pl = self._extract_bicycle_style(item_name)
+        core_name = self._strip_brand_prefix(item_name, "Thule")
+
+        if category_key == "thule_bicycle_mount":
+            if language == "en":
+                return f"Thule {core_name} accessory for bicycle wall mounting holder, intended for household use."
+            return f"Akcesorium Thule {core_name} do sciennego uchwytu rowerowego, przeznaczone do uzytku domowego."
+        if category_key == "video_game":
+            if language == "en":
+                target = f"{item_name} video game for {platform} console" if platform else f"{item_name} video game"
+                return f"{target}, intended for household use."
+            target = f"Gra wideo {item_name} na konsole {platform}" if platform else f"Gra wideo {item_name}"
+            return f"{target}, przeznaczona do uzytku domowego."
+        if category_key == "vinyl_record":
+            if language == "en":
+                return f"{item_name} vinyl record for music playback, intended for household use."
+            return f"Plyta winylowa {item_name} do odtwarzania muzyki w uzytku domowym, przeznaczona do uzytku domowego."
+        if category_key == "blu_ray":
+            if language == "en":
+                return f"{item_name} Blu-ray disc for video playback, intended for household use."
+            return f"Plyta Blu-ray {item_name} do odtwarzania wideo w uzytku domowym, przeznaczona do uzytku domowego."
+        if category_key == "bicycle_tyre":
+            if language == "en":
+                return f"{item_name} bicycle tyre for {style_en} cycling, intended for household use."
+            return f"Opona rowerowa {item_name} do jazdy {style_pl}, przeznaczona do uzytku domowego."
+        if category_key == "bicycle_tube":
+            if language == "en":
+                valve_part = f" with {valve} valve" if valve else ""
+                return f"{item_name} bicycle inner tube{valve_part}, intended for household use."
+            valve_part = f" z zaworem {valve}" if valve else ""
+            return f"Detka rowerowa {item_name}{valve_part}, przeznaczona do uzytku domowego."
+        if category_key == "valve_conversion":
+            if language == "en":
+                return f"Bicycle valve conversion kit {item_name} for inflating bicycle tyres, intended for household use."
+            return f"Zestaw do konwersji zaworu rowerowego {item_name}, przeznaczony do uzytku domowego."
+        if category_key == "puzzle":
+            if language == "en":
+                count_part = f" {puzzle_count}-piece" if puzzle_count else ""
+                return f"{item_name}{count_part} jigsaw puzzle, intended for household use."
+            count_part = f" {puzzle_count} elementow" if puzzle_count else ""
+            return f"Puzzle {item_name}{count_part}, przeznaczone do uzytku domowego."
+        if category_key == "music_accessory":
+            if language == "en":
+                return f"{item_name} musical instrument accessory, intended for household use."
+            return f"Akcesorium do instrumentu muzycznego {item_name}, przeznaczone do uzytku domowego."
+        if category_key == "headphones":
+            if language == "en":
+                return f"{item_name} headphones for household audio use, intended for household use."
+            return f"Sluchawki {item_name} do domowego uzytku audio, przeznaczone do uzytku domowego."
+        if category_key == "textile":
+            if language == "en":
+                return f"{item_name} textile accessory for household use, intended for household use."
+            return f"Akcesorium tekstylne {item_name}, przeznaczone do uzytku domowego."
+        if language == "en":
+            return f"{item_name} household product for everyday use, intended for household use."
+        return f"Produkt {item_name} do codziennego uzytku domowego, przeznaczony do uzytku domowego."
+
+    def _extract_platform(self, value: str) -> str:
+        lowered = value.lower()
+        for platform in ("PS5", "PS4", "Xbox Series X", "Xbox One", "Nintendo Switch", "PC"):
+            if platform.lower() in lowered:
+                return platform
         return ""
+
+    def _extract_valve_type(self, value: str) -> str:
+        lowered = value.lower()
+        for valve in ("Presta", "Dunlop", "Schrader"):
+            if valve.lower() in lowered:
+                return valve
+        return ""
+
+    def _extract_puzzle_count(self, value: str) -> str:
+        match = re.search(r"\b(\d{2,5})\s*(?:pcs|pieces|elementow|elements?)\b", value, flags=re.IGNORECASE)
+        return match.group(1) if match else ""
+
+    def _extract_bicycle_style(self, value: str) -> tuple[str, str]:
+        lowered = value.lower()
+        if any(token in lowered for token in ("urban", "city", "commute", "tour")):
+            return "urban", "miejskiej"
+        if any(token in lowered for token in ("mtb", "trail", "mud", "terrain", "gravel", "off-road", "xc")):
+            return "off-road", "terenowej"
+        return "performance", "wyczynowej"
+
+    def _strip_brand_prefix(self, value: str, brand: str) -> str:
+        stripped = re.sub(rf"^\s*{re.escape(brand)}\s*", "", value, flags=re.IGNORECASE).strip()
+        return stripped or value

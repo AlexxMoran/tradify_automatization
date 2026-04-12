@@ -19,6 +19,7 @@ class PdfDocumentError(Exception):
 
 @dataclass(slots=True)
 class _HeaderMetadata:
+    document_type: str
     invoice_ref: str
     issue_date: str | None = None
 
@@ -59,18 +60,23 @@ class GoodsDescriptionPdfBuilder:
         re.IGNORECASE,
     )
 
-    def build(self, invoice_file, line_items, descriptions) -> tuple[ProcessedInvoiceResult, bytes]:
+    def build(self, invoice_file, parsed_document, descriptions) -> tuple[ProcessedInvoiceResult, bytes]:
         result = ProcessedInvoiceResult(
             message="Invoice processed successfully",
             order_id=invoice_file.order_id,
             invoice_id=invoice_file.invoice_id,
             invoice_number=invoice_file.invoice_number,
-            currency=line_items[0].currency if line_items else None,
+            document_type=parsed_document.document_type,
+            document_ref=parsed_document.document_ref,
+            issue_date=parsed_document.issue_date,
+            currency=parsed_document.currency or (
+                parsed_document.line_items[0].currency if parsed_document.line_items else None
+            ),
             source_filename=(
                 invoice_file.invoice_number or f"invoice_{invoice_file.order_id}.pdf"
             ),
             original_pdf_size_bytes=len(invoice_file.pdf_bytes),
-            line_items=line_items,
+            line_items=parsed_document.line_items,
             descriptions=descriptions,
         )
         return result, self.render(result, source_pdf_bytes=invoice_file.pdf_bytes)
@@ -187,7 +193,12 @@ class GoodsDescriptionPdfBuilder:
             render_mode=0,
         )
         y += 18
-        subtitle = f"Invoice nr {header_meta.invoice_ref}"
+        subtitle_label = (
+            "Inter-Store Shift nr"
+            if header_meta.document_type == "inter_store_shift"
+            else "Invoice nr"
+        )
+        subtitle = f"{subtitle_label} {header_meta.invoice_ref}"
         page.insert_text(
             fitz.Point(x, y),
             subtitle,
@@ -465,7 +476,10 @@ class GoodsDescriptionPdfBuilder:
         y: float,
     ) -> None:
         total_qty = self._sum_decimal(entry.quantity for entry in result.descriptions)
-        total_value = self._sum_decimal(entry.line_value for entry in result.descriptions)
+        total_value = self._sum_decimal(
+            (entry.line_value for entry in result.descriptions),
+            force_two_decimals=True,
+        )
         currency = self._display_currency(result)
         start_y = min(y, page.rect.height - self.MARGIN_BOTTOM - 28)
         start_x = self.MARGIN_X
@@ -482,7 +496,7 @@ class GoodsDescriptionPdfBuilder:
             fontname="helv",
         )
 
-    def _sum_decimal(self, values) -> str:
+    def _sum_decimal(self, values, *, force_two_decimals: bool = False) -> str:
         total = Decimal("0")
         for value in values:
             normalized = value.replace(" ", "").replace(",", ".")
@@ -490,6 +504,8 @@ class GoodsDescriptionPdfBuilder:
                 total += Decimal(normalized)
             except (InvalidOperation, AttributeError):
                 continue
+        if force_two_decimals:
+            return f"{total:.2f}"
         if total == total.to_integral():
             return str(total.quantize(Decimal("1")))
         return f"{total:.2f}"
@@ -506,18 +522,23 @@ class GoodsDescriptionPdfBuilder:
         result: ProcessedInvoiceResult,
         src_doc: fitz.Document | None,
     ) -> _HeaderMetadata:
-        invoice_ref = result.invoice_number
-        issue_date = None
+        invoice_ref = result.document_ref or result.invoice_number
+        issue_date = result.issue_date
+        document_type = result.document_type
 
         if src_doc is not None:
             parsed_ref, parsed_issue_date = self._extract_pdf_metadata(src_doc)
             invoice_ref = parsed_ref or invoice_ref
-            issue_date = parsed_issue_date
+            issue_date = issue_date or parsed_issue_date
 
         if not invoice_ref:
             invoice_ref = self._display_invoice_ref(result)
 
-        return _HeaderMetadata(invoice_ref=invoice_ref, issue_date=issue_date)
+        return _HeaderMetadata(
+            document_type=document_type,
+            invoice_ref=invoice_ref,
+            issue_date=issue_date,
+        )
 
     def _extract_pdf_metadata(self, src_doc: fitz.Document) -> tuple[str | None, str | None]:
         try:
@@ -531,6 +552,12 @@ class GoodsDescriptionPdfBuilder:
         return invoice_ref, issue_date
 
     def _extract_invoice_ref(self, text: str) -> str | None:
+        if match := re.search(
+            r"Inter-Store\s+Shift\s+nr\s+([A-Z0-9]+(?:[/-][A-Z0-9]+)+)",
+            text,
+            re.IGNORECASE,
+        ):
+            return match.group(1).strip()
         match = self.COMMERCIAL_INVOICE_PATTERN.search(text)
         if not match:
             return None

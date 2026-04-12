@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 
 
-def build_goods_description_prompt(payload: list[dict[str, object]]) -> str:
+def build_goods_description_prompt(
+    payload: list[dict[str, object]],
+    *,
+    document_type: str,
+    document_ref: str | None,
+) -> str:
     return (
         "You enrich invoice rows for a customs goods description table. "
         "Do not add or remove rows. "
@@ -11,39 +16,57 @@ def build_goods_description_prompt(payload: list[dict[str, object]]) -> str:
         "{\"items\":[{\"line_no\":1,\"description_en\":\"...\",\"description_pl\":\"...\","
         "\"made_of\":\"...\",\"made_in\":\"...\",\"country_of_origin\":\"...\","
         "\"melt_and_pour\":\"...\",\"manufacturer_data\":\"...\"}]}. "
-        "The descriptions must explain what the product is and its household-use purpose. "
-        "Do not mention professional usage. "
-        "Do not use the words aluminium, aluminum, or copper. "
-        "The made_of field must be extremely short: preferably one word, maximum two words. "
-        "If a field cannot be determined with confidence, use 'UNKNOWN' for factual fields or 'N/A' for non-applicable fields. "
-        "Use the item_name, source_text, HS code, weights, prices, quantities, and brand clues in the row to infer the most likely material and country fields. "
-        "Use web search when needed to identify the likely brand, manufacturer, official company address, and most likely production country. "
-        "Treat invoice_origin_hint only as a weak hint and not as the source of truth, because invoice origin can be wrong. "
-        "For made_in and country_of_origin, first identify the likely product and brand from the row, then infer the most likely country based on the product and brand. "
-        "Prefer your product-and-brand inference over invoice_origin_hint. "
-        "Use invoice_origin_hint only as a last-resort fallback when you cannot infer any better country from the row. "
-        "Use UNKNOWN for made_of, made_in, or country_of_origin only as a last resort when the row does not contain enough signals for a reasonable inference. "
-        "For manufacturer_data, return only a postal-style company address related to the brand or manufacturer. "
-        "Do not leave manufacturer_data as UNKNOWN just because the invoice row is sparse. "
-        "Manufacturer address information is typically available on the internet, so actively use web search to find it. "
-        "Address priority for manufacturer_data is: exact factory or production address first, brand headquarters second, any other official company address related to the brand or manufacturer third. "
-        "You must try to identify the brand or manufacturer and find an address before considering UNKNOWN. "
-        "Search for the brand website, company contact page, legal notice, headquarters address, or manufacturer profile. "
-        "Do not write UNKNOWN in manufacturer_data. "
-        "Always return the best plausible official company address you can identify from web search. "
-        "If you cannot find a full street address, return the best partial official address available, such as 'Company, City, Country' or 'Company, Country'. "
-        "If the real found address is in a different country than invoice_origin_hint, keep the real found address and its real country anyway. "
-        "Do not write explanations, assumptions, importer notes, or free-form sentences in manufacturer_data. "
-        "For made_of, follow these exact rules. "
-        "If the item is fully metal, return only 'steel'. "
-        "If the item is partly metal, do not mention metal; return 'composite' or the dominant non-metal material. "
-        "If the item is fully wood, do not mention wood; return 'composite'. "
-        "If the item is partly wood, do not mention wood; return 'composite' or the dominant non-wood material. "
-        "If the item mixes paper and metal, do not return metal/paper; return 'composite' or the dominant non-metal material. "
-        "Never return material combinations that mention metal or wood for mixed-material goods. "
-        "The melt_and_pour field must reflect whether the item appears to be cast/poured metal. "
-        "If the item appears to be fully metal and made_of is 'steel', use the same country data as made_in/country_of_origin in melt_and_pour. "
-        "If the product does not appear to be metal-based, return 'N/A' for melt_and_pour. "
-        "Do not change currency, quantities, prices, or weights. "
+        "You always receive invoice row data plus optional local rule hints. "
+        "Use local rule hints as a first-class signal. "
+        "If a local hint is present in a strict field, preserve it unless it is clearly impossible. "
+        "If the local hints are partial, complete the missing fields using inference and web search. "
+        "If no local hint exists, infer everything from the row itself. "
+        "Never return empty strings, UNKNOWN, N/A, None, null, or placeholder text for description_en, description_pl, made_of, made_in, country_of_origin, or manufacturer_data. "
+        "Manufacturer's data MUST include a full postal-style legal address with company name, street, postal code, city, and country. "
+        "Responses without a street-style address are not acceptable unless the official address itself uses a business centre or industrial estate format. "
+        "Do not include URLs, website names, emails, social media handles, usernames, marketplace seller names, or contact nicknames in manufacturer_data. "
+        "manufacturer_data must be only the legal entity name and its postal address. "
+        "Treat invoice_origin_hint only as a weak fallback. "
+        "Country of origin must be based on the real brand or manufacturer, not on invoice origin. "
+        "If invoice_origin_hint is CN, never return China as the final country when a non-China brand country is available. If the brand itself still resolves to China, return Taiwan instead of China. "
+        "Do not mention China in descriptions. "
+        "Made in should follow country_of_origin unless a stronger brand-specific signal clearly indicates another valid country. "
+        "If the product is fully metal, made_of may be 'Steel' and melt_and_pour must equal made_in. "
+        "If the product is not fully metal, melt_and_pour must be 'N/A'. "
+        "Descriptions must be household-safe and must end with the exact endings: "
+        "PL descriptions end with 'przeznaczony do uzytku domowego.', 'przeznaczona do uzytku domowego.', or 'przeznaczone do uzytku domowego.' "
+        "EN descriptions end with 'intended for household use.' "
+        "If the local category hint mentions wording constraints, obey them exactly. "
+        "Avoid dangerous, weapon-like, or alarming wording. Soften risky goods into household-safe wording when possible. "
+        "Do not use banned material words like aluminium, aluminum, copper, wood, or brass in made_of. "
+        "Do not use composite material strings such as 'Rubber+Steel', 'Plastic/Steel', or 'Cotton/Textile'. "
+        "The made_of field must be exactly one of: Plastic, Rubber, Textile, Composite, Steel. "
+        "Choose the simplest safe material from that five-value list. "
+        f"Document type: {document_type}. "
+        f"Document ref: {document_ref or ''}. "
         f"Invoice items: {json.dumps(payload, ensure_ascii=False)}"
+    )
+
+
+def build_goods_description_repair_prompt(
+    payload: list[dict[str, object]],
+    *,
+    document_type: str,
+    document_ref: str | None,
+) -> str:
+    return (
+        "Repair the invalid customs goods description rows below. "
+        "Return strict JSON in the same items array shape. "
+        "All rows already include local hints and a previous invalid draft. "
+        "Fix every invalid field. "
+        "Never leave placeholders, never leave incomplete addresses, and never leave the household-use ending missing. "
+        "manufacturer_data must contain only the legal company name and postal address, with no URLs, emails, social handles, usernames, or marketplace aliases. "
+        "If the product is fully metal, set made_of to 'Steel' and set melt_and_pour equal to made_in. "
+        "If the product is not fully metal, melt_and_pour must be 'N/A'. "
+        "made_of must be exactly one of Plastic, Rubber, Textile, Composite, Steel. "
+        "country_of_origin must prefer the brand country over invoice origin. "
+        "If invoice_origin_hint is CN, do not return China. Use the brand country, or Taiwan if the brand itself still resolves to China. "
+        f"Document type: {document_type}. "
+        f"Document ref: {document_ref or ''}. "
+        f"Rows to repair: {json.dumps(payload, ensure_ascii=False)}"
     )

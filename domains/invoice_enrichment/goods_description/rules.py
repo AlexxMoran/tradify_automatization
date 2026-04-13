@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-
 BANNED_WORDS = {
     "aluminium",
     "aluminum",
@@ -149,7 +148,7 @@ def normalize_lookup_text(value: str) -> str:
 
 
 def _data_path(filename: str) -> Path:
-    return Path(__file__).resolve().parent / "data" / filename
+    return Path(__file__).resolve().parents[1] / "data" / filename
 
 
 @lru_cache()

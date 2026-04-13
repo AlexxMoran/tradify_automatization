@@ -1,16 +1,24 @@
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass
-from io import BytesIO
 from decimal import Decimal, InvalidOperation
+from io import BytesIO
 from pathlib import Path
 
 import fitz
 from pypdf import PdfReader, PdfWriter
 
-from models import ProcessedInvoiceResult
+from domains.invoice_enrichment.document_metadata import (
+    extract_invoice_ref,
+    extract_issue_date,
+)
+from domains.invoice_enrichment.models import (
+    ProcessedInvoiceResult,
+    SourceInvoiceDocument,
+)
 
 
 class PdfDocumentError(Exception):
@@ -51,38 +59,39 @@ class GoodsDescriptionPdfBuilder:
         ("line_value", "Line\nvalue\n({currency})", 34),
         ("net_weight_kg", "Net\nweight\n(kg)", 32),
     )
-    COMMERCIAL_INVOICE_PATTERN = re.compile(
-        r"Commercial\s+Invoice\s+nr\s+([A-Z0-9]+(?:[/-][A-Z0-9]+)+)",
-        re.IGNORECASE,
-    )
-    ISSUE_DATE_PATTERN = re.compile(
-        r"(?:Data\s+wystawienia|Issue\s+date)(?:\s*/\s*Issue\s+date)?\s*:\s*(\d{4}-\d{2}-\d{2})",
-        re.IGNORECASE,
-    )
 
-    def build(self, invoice_file, parsed_document, descriptions) -> tuple[ProcessedInvoiceResult, bytes]:
+    def build(
+        self, source_document: SourceInvoiceDocument, parsed_document, descriptions
+    ) -> tuple[ProcessedInvoiceResult, bytes]:
         result = ProcessedInvoiceResult(
             message="Invoice processed successfully",
-            order_id=invoice_file.order_id,
-            invoice_id=invoice_file.invoice_id,
-            invoice_number=invoice_file.invoice_number,
+            order_id=source_document.order_id,
+            invoice_id=source_document.invoice_id,
+            invoice_number=source_document.invoice_number,
             document_type=parsed_document.document_type,
             document_ref=parsed_document.document_ref,
             issue_date=parsed_document.issue_date,
-            currency=parsed_document.currency or (
-                parsed_document.line_items[0].currency if parsed_document.line_items else None
+            currency=parsed_document.currency
+            or (
+                parsed_document.line_items[0].currency
+                if parsed_document.line_items
+                else None
             ),
-            source_filename=(
-                invoice_file.invoice_number or f"invoice_{invoice_file.order_id}.pdf"
-            ),
-            original_pdf_size_bytes=len(invoice_file.pdf_bytes),
+            source_filename=source_document.source_filename,
+            original_pdf_size_bytes=len(source_document.pdf_bytes),
             line_items=parsed_document.line_items,
             descriptions=descriptions,
         )
-        return result, self.render(result, source_pdf_bytes=invoice_file.pdf_bytes)
+        return result, self.render(result, source_pdf_bytes=source_document.pdf_bytes)
 
-    def render(self, result: ProcessedInvoiceResult, *, source_pdf_bytes: bytes | None = None) -> bytes:
-        src_doc = fitz.open(stream=source_pdf_bytes, filetype="pdf") if source_pdf_bytes else None
+    def render(
+        self, result: ProcessedInvoiceResult, *, source_pdf_bytes: bytes | None = None
+    ) -> bytes:
+        src_doc = (
+            fitz.open(stream=source_pdf_bytes, filetype="pdf")
+            if source_pdf_bytes
+            else None
+        )
         try:
             page_width, page_height = self._resolve_page_size(src_doc)
             columns = self._build_columns(page_width, result)
@@ -135,7 +144,9 @@ class GoodsDescriptionPdfBuilder:
         doc.close()
         return output
 
-    def _new_page(self, doc: fitz.Document, page_width: float, page_height: float) -> fitz.Page:
+    def _new_page(
+        self, doc: fitz.Document, page_width: float, page_height: float
+    ) -> fitz.Page:
         return doc.new_page(width=page_width, height=page_height)
 
     def _start_render_page(
@@ -160,8 +171,9 @@ class GoodsDescriptionPdfBuilder:
                 first_page = src_doc[0]
                 return first_page.rect.width, first_page.rect.height
             except Exception as exc:
-                import logging
-                logging.getLogger(__name__).debug("Could not read page size from source PDF: %s", exc)
+                logging.getLogger(__name__).debug(
+                    "Could not read page size from source PDF: %s", exc
+                )
         return self.DEFAULT_PAGE_WIDTH, self.DEFAULT_PAGE_HEIGHT
 
     def _build_columns(
@@ -215,7 +227,9 @@ class GoodsDescriptionPdfBuilder:
             )
         return y + 16
 
-    def _build_x_positions(self, columns: tuple[tuple[str, str, float], ...]) -> list[float]:
+    def _build_x_positions(
+        self, columns: tuple[tuple[str, str, float], ...]
+    ) -> list[float]:
         positions = [self.MARGIN_X]
         current = self.MARGIN_X
         for _, _, width in columns:
@@ -223,10 +237,14 @@ class GoodsDescriptionPdfBuilder:
             positions.append(current)
         return positions
 
-    def _measure_header_height(self, columns: tuple[tuple[str, str, float], ...]) -> float:
+    def _measure_header_height(
+        self, columns: tuple[tuple[str, str, float], ...]
+    ) -> float:
         max_lines = 1
         for _, label, width in columns:
-            wrapped = self._wrap_cell_text(label, width - (self.HEADER_PADDING * 2), self.HEADER_FONT_SIZE)
+            wrapped = self._wrap_cell_text(
+                label, width - (self.HEADER_PADDING * 2), self.HEADER_FONT_SIZE
+            )
             max_lines = max(max_lines, len(wrapped))
         return max(32, max_lines * self.LINE_HEIGHT + self.HEADER_PADDING * 2 + 4)
 
@@ -240,8 +258,12 @@ class GoodsDescriptionPdfBuilder:
     ) -> float:
         for index, (_, label, _) in enumerate(columns):
             rect = fitz.Rect(x_positions[index], y, x_positions[index + 1], y + height)
-            page.draw_rect(rect, color=(0.25, 0.25, 0.25), fill=(0.86, 0.9, 0.97), width=0.6)
-            lines = self._wrap_cell_text(label, rect.width - (self.HEADER_PADDING * 2), self.HEADER_FONT_SIZE)
+            page.draw_rect(
+                rect, color=(0.25, 0.25, 0.25), fill=(0.86, 0.9, 0.97), width=0.6
+            )
+            lines = self._wrap_cell_text(
+                label, rect.width - (self.HEADER_PADDING * 2), self.HEADER_FONT_SIZE
+            )
             self._draw_multiline_text(
                 page,
                 rect,
@@ -255,10 +277,7 @@ class GoodsDescriptionPdfBuilder:
         return {
             "line_no": str(description.line_no),
             "description": self._prepare_cell_text(
-                (
-                f"PL: {description.description_pl}\n"
-                f"EN: {description.description_en}"
-                )
+                f"PL: {description.description_pl}\nEN: {description.description_en}"
             ),
             "hs_code": self._prepare_cell_text(description.hs_code),
             "made_of": self._prepare_cell_text(description.made_of),
@@ -279,7 +298,9 @@ class GoodsDescriptionPdfBuilder:
     ) -> float:
         line_counts = []
         for column_name, _, width in columns:
-            wrapped = self._wrap_cell_text(row_cells[column_name], width - 8, self.BODY_FONT_SIZE)
+            wrapped = self._wrap_cell_text(
+                row_cells[column_name], width - 8, self.BODY_FONT_SIZE
+            )
             line_counts.append(max(1, len(wrapped)))
         return max(line_counts) * self.LINE_HEIGHT + self.ROW_PADDING * 2 + 2
 
@@ -293,7 +314,9 @@ class GoodsDescriptionPdfBuilder:
         row_cells: dict[str, str],
     ) -> None:
         for index, (column_name, _, _) in enumerate(columns):
-            rect = fitz.Rect(x_positions[index], y, x_positions[index + 1], y + row_height)
+            rect = fitz.Rect(
+                x_positions[index], y, x_positions[index + 1], y + row_height
+            )
             page.draw_rect(rect, color=(0.35, 0.35, 0.35), width=0.5)
             wrapped = self._wrap_cell_text(
                 row_cells[column_name],
@@ -357,14 +380,18 @@ class GoodsDescriptionPdfBuilder:
             lines.append(current)
         return lines
 
-    def _break_long_token(self, token: str, width: float, font_size: float) -> list[str]:
+    def _break_long_token(
+        self, token: str, width: float, font_size: float
+    ) -> list[str]:
         if re.search(r"[/\-]", token):
             parts = self._break_token_by_delimiter(token, width, font_size)
             if parts:
                 return parts
         return self._break_token_by_char(token, width, font_size)
 
-    def _break_token_by_delimiter(self, token: str, width: float, font_size: float) -> list[str]:
+    def _break_token_by_delimiter(
+        self, token: str, width: float, font_size: float
+    ) -> list[str]:
         parts = re.split(r"([/\-])", token)
         if len(parts) <= 1:
             return []
@@ -402,7 +429,9 @@ class GoodsDescriptionPdfBuilder:
             lines.append(current)
         return lines
 
-    def _break_token_by_char(self, token: str, width: float, font_size: float) -> list[str]:
+    def _break_token_by_char(
+        self, token: str, width: float, font_size: float
+    ) -> list[str]:
         chunks: list[str] = []
         current = ""
         for char in token:
@@ -540,28 +569,17 @@ class GoodsDescriptionPdfBuilder:
             issue_date=issue_date,
         )
 
-    def _extract_pdf_metadata(self, src_doc: fitz.Document) -> tuple[str | None, str | None]:
+    def _extract_pdf_metadata(
+        self, src_doc: fitz.Document
+    ) -> tuple[str | None, str | None]:
         try:
             text = src_doc[0].get_text("text")
         except Exception:
             return None, None
 
-        invoice_ref = self._extract_invoice_ref(text)
-        issue_date_match = self.ISSUE_DATE_PATTERN.search(text)
-        issue_date = issue_date_match.group(1).strip() if issue_date_match else None
+        invoice_ref = extract_invoice_ref(text)
+        issue_date = extract_issue_date(text)
         return invoice_ref, issue_date
-
-    def _extract_invoice_ref(self, text: str) -> str | None:
-        if match := re.search(
-            r"Inter-Store\s+Shift\s+nr\s+([A-Z0-9]+(?:[/-][A-Z0-9]+)+)",
-            text,
-            re.IGNORECASE,
-        ):
-            return match.group(1).strip()
-        match = self.COMMERCIAL_INVOICE_PATTERN.search(text)
-        if not match:
-            return None
-        return match.group(1).strip()
 
     def _display_currency(self, result: ProcessedInvoiceResult) -> str:
         if result.currency:
@@ -579,7 +597,12 @@ class GoodsDescriptionPdfBuilder:
 
 
 class PdfMergeService:
-    def merge(self, result: ProcessedInvoiceResult, original_pdf_bytes: bytes, description_pdf_bytes: bytes) -> ProcessedInvoiceResult:
+    def merge(
+        self,
+        result: ProcessedInvoiceResult,
+        original_pdf_bytes: bytes,
+        description_pdf_bytes: bytes,
+    ) -> ProcessedInvoiceResult:
         try:
             writer = PdfWriter()
             writer.append(PdfReader(BytesIO(original_pdf_bytes)))
@@ -587,7 +610,9 @@ class PdfMergeService:
             buffer = BytesIO()
             writer.write(buffer)
         except Exception as exc:
-            raise PdfDocumentError(f"Failed to merge invoice PDF documents: {exc}") from exc
+            raise PdfDocumentError(
+                f"Failed to merge invoice PDF documents: {exc}"
+            ) from exc
         merged = buffer.getvalue()
         result.description_pdf_size_bytes = len(description_pdf_bytes)
         result.merged_pdf_size_bytes = len(merged)

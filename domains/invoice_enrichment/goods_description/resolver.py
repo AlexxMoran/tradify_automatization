@@ -3,8 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from core.utils import collapse_whitespace
-from models import InvoiceLineItem, ResolvedRuleHints
-from rules.goods_description_rules import (
+from domains.invoice_enrichment.goods_description.rules import (
     COUNTRY_MAP,
     BrandRule,
     CategoryRule,
@@ -12,6 +11,7 @@ from rules.goods_description_rules import (
     load_category_rules,
     normalize_lookup_text,
 )
+from domains.invoice_enrichment.models import InvoiceLineItem, ResolvedRuleHints
 
 
 class GoodsRuleResolver:
@@ -50,6 +50,17 @@ class GoodsRuleResolver:
         hints = self._apply_origin_overrides(item, hints, text)
         return self._compact(hints)
 
+    def has_sufficient_local_hints(self, hints: ResolvedRuleHints) -> bool:
+        return all(
+            (
+                hints.description_en_hint,
+                hints.description_pl_hint,
+                hints.made_of_hint,
+                hints.country_of_origin_hint,
+                hints.manufacturer_data_hint,
+            )
+        )
+
     def _match_brand(self, text: str) -> BrandRule | None:
         matches = [
             rule
@@ -58,7 +69,9 @@ class GoodsRuleResolver:
         ]
         if not matches:
             return None
-        return max(matches, key=lambda rule: max(len(keyword) for keyword in rule.keywords))
+        return max(
+            matches, key=lambda rule: max(len(keyword) for keyword in rule.keywords)
+        )
 
     def _match_category(self, text: str) -> CategoryRule | None:
         matches = [
@@ -68,7 +81,9 @@ class GoodsRuleResolver:
         ]
         if not matches:
             return None
-        return max(matches, key=lambda rule: max(len(keyword) for keyword in rule.keywords))
+        return max(
+            matches, key=lambda rule: max(len(keyword) for keyword in rule.keywords)
+        )
 
     def _apply_origin_overrides(
         self,
@@ -84,13 +99,20 @@ class GoodsRuleResolver:
         prompt_notes = list(hints.prompt_notes)
 
         if hints.brand_name == "Universal Music":
-            if any(token in padded_text for token in (" uk ", " united kingdom ", " brit", " british ")):
+            if any(
+                token in padded_text
+                for token in (" uk ", " united kingdom ", " brit", " british ")
+            ):
                 country_hint = "United Kingdom"
                 address_hint = "Universal Music Operations Ltd., 4 Pancras Square, London N1C 4AG, United Kingdom"
                 made_in_hint = country_hint
-            elif any(token in padded_text for token in (" de ", " germany ", " german ")):
+            elif any(
+                token in padded_text for token in (" de ", " germany ", " german ")
+            ):
                 country_hint = "Germany"
-                address_hint = "Universal Music GmbH, Stralauer Allee 1, 10245 Berlin, Germany"
+                address_hint = (
+                    "Universal Music GmbH, Stralauer Allee 1, 10245 Berlin, Germany"
+                )
                 made_in_hint = country_hint
             else:
                 country_hint = "United States"

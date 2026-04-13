@@ -9,6 +9,15 @@ class GenerateInvoiceRequest(BaseModel):
 
 
 @dataclass(slots=True)
+class SourceInvoiceDocument:
+    order_id: str
+    pdf_bytes: bytes
+    invoice_id: int | None = None
+    invoice_number: str | None = None
+    source_filename: str | None = None
+
+
+@dataclass(slots=True)
 class InvoiceLineItem:
     line_no: int
     item_name: str

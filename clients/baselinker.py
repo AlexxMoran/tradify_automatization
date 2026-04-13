@@ -62,7 +62,9 @@ class BaseLinkerClient:
         return ExternalInvoiceFile(
             order_id=str(order_id),
             invoice_id=int(invoice_id),
-            invoice_number=str(payload.get("invoice_number") or invoice.get("number") or ""),
+            invoice_number=str(
+                payload.get("invoice_number") or invoice.get("number") or ""
+            ),
             pdf_bytes=self._decode_invoice_data(str(encoded_invoice)),
         )
 
@@ -70,7 +72,9 @@ class BaseLinkerClient:
         try:
             order_id_int = int(order_id)
         except ValueError:
-            raise BaseLinkerError(f"Invalid order_id: {order_id!r} is not a valid integer")
+            raise BaseLinkerError(
+                f"Invalid order_id: {order_id!r} is not a valid integer"
+            )
         payload = await self._request(
             method="getInvoices",
             parameters={
@@ -80,7 +84,9 @@ class BaseLinkerClient:
         invoices = payload.get("invoices", [])
 
         if not isinstance(invoices, list):
-            raise BaseLinkerError("BaseLinker returned invoices in an unexpected format")
+            raise BaseLinkerError(
+                "BaseLinker returned invoices in an unexpected format"
+            )
 
         return invoices
 
@@ -99,13 +105,17 @@ class BaseLinkerClient:
             )
             response.raise_for_status()
         except httpx.TimeoutException as exc:
-            raise BaseLinkerError(f"BaseLinker request timed out for method={method}") from exc
+            raise BaseLinkerError(
+                f"BaseLinker request timed out for method={method}"
+            ) from exc
         except httpx.HTTPStatusError as exc:
             raise BaseLinkerError(
                 f"BaseLinker request failed with HTTP {exc.response.status_code} for method={method}"
             ) from exc
         except httpx.HTTPError as exc:
-            raise BaseLinkerError(f"BaseLinker request failed for method={method}: {exc}") from exc
+            raise BaseLinkerError(
+                f"BaseLinker request failed for method={method}: {exc}"
+            ) from exc
 
         try:
             payload = response.json()
@@ -122,7 +132,9 @@ class BaseLinkerClient:
         if status != "SUCCESS":
             error_code = payload.get("error_code", "UNKNOWN")
             error_message = payload.get("error_message", "BaseLinker request failed")
-            logger.warning("BaseLinker %s failed: %s - %s", method, error_code, error_message)
+            logger.warning(
+                "BaseLinker %s failed: %s - %s", method, error_code, error_message
+            )
             raise BaseLinkerError(f"{method} failed (code: {error_code})")
 
         return payload
@@ -139,4 +151,6 @@ class BaseLinkerClient:
         try:
             return base64.b64decode(encoded_invoice, validate=True)
         except (ValueError, TypeError) as exc:
-            raise BaseLinkerError("Failed to decode BaseLinker invoice payload") from exc
+            raise BaseLinkerError(
+                "Failed to decode BaseLinker invoice payload"
+            ) from exc

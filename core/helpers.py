@@ -6,7 +6,7 @@ import re
 from fastapi import HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
-from models import ProcessedInvoiceResult
+from domains.invoice_enrichment.models import ProcessedInvoiceResult
 
 MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # 20 MB
 UPLOAD_CHUNK_SIZE = 1024 * 1024

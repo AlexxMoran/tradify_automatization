@@ -13,9 +13,9 @@ def build_goods_description_prompt(
         "You enrich invoice rows for a customs goods description table. "
         "Do not add or remove rows. "
         "Return strict JSON in the form "
-        "{\"items\":[{\"line_no\":1,\"description_en\":\"...\",\"description_pl\":\"...\","
-        "\"made_of\":\"...\",\"made_in\":\"...\",\"country_of_origin\":\"...\","
-        "\"melt_and_pour\":\"...\",\"manufacturer_data\":\"...\"}]}. "
+        '{"items":[{"line_no":1,"description_en":"...","description_pl":"...",'
+        '"made_of":"...","made_in":"...","country_of_origin":"...",'
+        '"melt_and_pour":"...","manufacturer_data":"..."}]}. '
         "You always receive invoice row data plus optional local rule hints. "
         "Use local rule hints as a first-class signal. "
         "If a local hint is present in a strict field, preserve it unless it is clearly impossible. "

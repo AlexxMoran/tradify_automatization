@@ -3,9 +3,18 @@ import logging
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
 from core.auth import verify_api_key
-from core.helpers import build_pdf_response, build_test_filename_stem, log_request_warning, read_pdf_with_limit
-from models import GenerateInvoiceRequest
-from services import GenerateInvoiceError, GenerateInvoiceService, GenerateInvoiceTestService
+from core.helpers import (
+    build_pdf_response,
+    build_test_filename_stem,
+    log_request_warning,
+    read_pdf_with_limit,
+)
+from domains.invoice_enrichment.application.errors import InvoiceProcessingError
+from domains.invoice_enrichment.application.sources import (
+    BaseLinkerInvoiceSource,
+    UploadedPdfInvoiceSource,
+)
+from domains.invoice_enrichment.models import GenerateInvoiceRequest
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -26,14 +35,14 @@ def health_check():
 
 @router.post("/generate", dependencies=[Depends(verify_api_key)])
 async def generate_invoice(request: Request, payload: GenerateInvoiceRequest):
-    service = GenerateInvoiceService(
-        baselinker_client=request.app.state.baselinker_client,
-        description_generator=request.app.state.description_generator,
+    source = BaseLinkerInvoiceSource(
+        client=request.app.state.baselinker_client,
+        order_id=payload.order_id,
     )
 
     try:
-        result = await service(payload.order_id)
-    except GenerateInvoiceError as exc:
+        result = await request.app.state.invoice_processing_pipeline.process(source)
+    except InvoiceProcessingError as exc:
         log_request_warning(
             logger,
             "generate_failed",
@@ -60,16 +69,14 @@ async def generate_test(
     if not pdf_bytes:
         raise HTTPException(status_code=400, detail="Uploaded PDF is empty")
 
-    service = GenerateInvoiceTestService(
-        description_generator=request.app.state.description_generator,
+    source = UploadedPdfInvoiceSource(
+        pdf_bytes,
+        order_id=order_id,
+        source_filename=pdf.filename,
     )
     try:
-        result = await service(
-            pdf_bytes,
-            order_id=order_id,
-            source_filename=pdf.filename,
-        )
-    except GenerateInvoiceError as exc:
+        result = await request.app.state.invoice_processing_pipeline.process(source)
+    except InvoiceProcessingError as exc:
         log_request_warning(
             logger,
             "generate_test_failed",

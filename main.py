@@ -5,26 +5,56 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from api import router as api_router
 from clients import BaseLinkerClient
 from core.config import get_settings
 from core.helpers import log_unhandled_request_exception
-from services.goods_description import GoodsDescriptionGenerator
+from domains.invoice_enrichment.api import router as invoice_router
+from domains.invoice_enrichment.application.invoice_processing_pipeline import (
+    InvoiceProcessingPipeline,
+)
+from domains.invoice_enrichment.goods_description import (
+    GoodsDescriptionGateway,
+    GoodsDescriptionGenerator,
+    GoodsDescriptionNormalizer,
+    GoodsDescriptionValidator,
+    GoodsRuleResolver,
+)
+from domains.invoice_enrichment.invoice_parser import InvoicePdfParser
+from domains.invoice_enrichment.pdf_documents import (
+    GoodsDescriptionPdfBuilder,
+    PdfMergeService,
+)
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings = get_settings()
     app.state.baselinker_client = BaseLinkerClient()
-    app.state.description_generator = GoodsDescriptionGenerator()
+    normalizer = GoodsDescriptionNormalizer()
+    app.state.invoice_processing_pipeline = InvoiceProcessingPipeline(
+        parser=InvoicePdfParser(),
+        description_generator=GoodsDescriptionGenerator(
+            resolver=GoodsRuleResolver(),
+            gateway=GoodsDescriptionGateway(
+                api_key=settings.openai_api_key,
+                model=settings.openai_model,
+                generation_mode=settings.description_generation_mode,
+            ),
+            normalizer=normalizer,
+            validator=GoodsDescriptionValidator(normalizer),
+        ),
+        pdf_builder=GoodsDescriptionPdfBuilder(),
+        pdf_merger=PdfMergeService(),
+    )
     yield
     await app.state.baselinker_client.aclose()
 
 
 settings = get_settings()
 app = FastAPI(lifespan=lifespan)
-app.include_router(api_router)
+app.include_router(invoice_router)
 
 
 @app.exception_handler(Exception)

@@ -455,9 +455,8 @@ class GoodsDescriptionPdfBuilder:
         text = text.replace("\u2013", "-").replace("\u2014", "-").replace("\u2212", "-")
         text = text.replace("\u2018", "'").replace("\u2019", "'")
         text = text.replace("\u201c", '"').replace("\u201d", '"')
-        text = unicodedata.normalize("NFKD", text)
-        text = "".join(char for char in text if not unicodedata.combining(char))
-        text = re.sub(r"[^\x0a\x20-\x7e]", " ", text)
+        text = unicodedata.normalize("NFC", text)
+        text = re.sub(r"[^\x0a\x20-\x7e\u00c0-\u024f]", " ", text)
         return re.sub(r"[ ]{2,}", " ", text)
 
     def _draw_multiline_text(

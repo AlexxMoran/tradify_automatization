@@ -7,7 +7,7 @@ from core.utils import clean_optional_text
 
 
 @dataclass(slots=True)
-class GoodsDescriptionDraft:
+class Draft:
     line_no: int
     description_en: str = ""
     description_pl: str = ""
@@ -18,7 +18,7 @@ class GoodsDescriptionDraft:
     manufacturer_data: str = ""
 
     @classmethod
-    def from_payload(cls, payload: dict[str, Any]) -> "GoodsDescriptionDraft":
+    def from_payload(cls, payload: dict[str, Any]) -> "Draft":
         return cls(
             line_no=int(payload["line_no"]),
             description_en=clean_optional_text(payload.get("description_en")),

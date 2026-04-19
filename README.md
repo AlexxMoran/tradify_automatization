@@ -1,8 +1,45 @@
 # Tradify Automatization
 
-Backend service for invoice enrichment and PDF post-processing.
+Backend service for automated invoice PDF processing. The application fetches
+an invoice, extracts line items, generates customs-friendly goods descriptions,
+and returns a final PDF where the original document is merged with an enriched
+goods description table.
 
-The project processes commercial invoice PDFs, extracts line items, generates customs-friendly goods descriptions, and returns a merged PDF document.
+## What The Application Does
+
+The service covers one main workflow: turn a BaseLinker order or manually
+uploaded invoice PDF into a document ready for customs or operational use.
+
+High-level steps:
+
+1. The API receives an `order_id` or a PDF file for manual test processing.
+2. For an `order_id`, the service fetches the external invoice PDF from BaseLinker.
+3. The PDF is parsed: the app detects the invoice table, line items, HS codes,
+   quantities, prices, currency, weights, and document metadata.
+4. For each line item, the app builds context from the source item name, HS code,
+   origin, local brand/category rules, and normalized hints.
+5. OpenAI generates customs-friendly EN/PL goods descriptions and missing fields:
+   material, made in, country of origin, melt and pour, and manufacturer data.
+6. Local validation and the review phase check the result, apply strict rules,
+   and use fallbacks when AI output is not reliable enough.
+7. The service renders an additional PDF page with the enriched table.
+8. The original invoice PDF and the new page are merged into one PDF.
+
+The API returns `application/pdf`: the original invoice plus an added page with
+enriched goods descriptions.
+
+## Inputs And Outputs
+
+### Input
+
+- `POST /generate` receives JSON with an `order_id`.
+- `POST /generate-test` receives a PDF upload and optional `order_id`.
+
+### Output
+
+- HTTP `200 OK`.
+- Content-Type: `application/pdf`.
+- Response body: merged PDF document.
 
 ## Stack
 
@@ -16,6 +53,51 @@ The project processes commercial invoice PDFs, extracts line items, generates cu
 - pypdf
 - OpenAI Python SDK
 - uv
+- Docker
+- Google Cloud Run
+
+## Architecture
+
+The main pipeline is assembled in `main.py` and implemented in
+`domains/invoice_enrichment/application/invoice_processing_pipeline.py`.
+
+Key parts:
+
+- `clients/baselinker.py` - BaseLinker integration and invoice PDF fetching.
+- `invoice_pdf_parser/` - invoice table and line item extraction from PDF files.
+- `goods_description/` - rules, normalization, OpenAI generation/review,
+  validation, and fallback handling.
+- `pdf_document/` - additional PDF page rendering and merge with the original.
+- `domains/invoice_enrichment/api.py` - FastAPI endpoints.
+
+Simplified flow:
+
+```text
+order_id / uploaded PDF
+        |
+        v
+InvoiceSource
+        |
+        v
+Parser -> ParsedDocument + line items
+        |
+        v
+Goods Description Generator
+  - local rules
+  - normalization
+  - OpenAI generation
+  - OpenAI review
+  - validation/fallback
+        |
+        v
+PDF Builder -> description PDF
+        |
+        v
+MergeService -> original PDF + description PDF
+        |
+        v
+application/pdf response
+```
 
 ## Local Run
 
@@ -32,6 +114,26 @@ Health check:
 curl http://localhost:8080/health
 ```
 
+Generate from BaseLinker order:
+
+```bash
+curl -X POST http://localhost:8080/generate \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -d '{"order_id":"12345"}' \
+  --output invoice_12345.pdf
+```
+
+Run a manual PDF test:
+
+```bash
+curl -X POST http://localhost:8080/generate-test \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -F "order_id=manual-test" \
+  -F "pdf=@invoice.pdf;type=application/pdf" \
+  --output invoice_manual_test_mutated.pdf
+```
+
 ## Required Environment Variables
 
 Application settings are loaded from environment variables or a local `.env` file.
@@ -45,14 +147,58 @@ Required in production:
 
 Optional:
 
+- `HOST`
+- `PORT`
 - `OPENAI_MODEL`
+- `OPENAI_REASONING_EFFORT`
 - `BASELINKER_API_URL`
 - `BASELINKER_TIMEOUT_SECONDS`
 
-Notes:
+Recommended defaults:
 
-- Use `DESCRIPTION_GENERATION_MODE=hybrid`.
-- `OPENAI_API_KEY` is required because goods description generation is AI-only.
+```env
+DESCRIPTION_GENERATION_MODE=hybrid
+OPENAI_MODEL=gpt-5.2
+OPENAI_REASONING_EFFORT=medium
+```
+
+## API Overview
+
+### `GET /`
+
+Returns a simple service message.
+
+### `GET /health`
+
+Returns a simple service status payload.
+
+### `POST /generate`
+
+Protected by `X-API-Key`.
+
+Request body:
+
+```json
+{
+  "order_id": "12345"
+}
+```
+
+Response:
+
+- `200 OK`
+- `application/pdf`
+
+### `POST /generate-test`
+
+Protected by `X-API-Key`.
+
+Accepts a PDF upload and returns the merged test PDF.
+
+Form fields:
+
+- `pdf` - uploaded invoice PDF.
+- `order_id` - optional test order id, defaults to `manual-test`.
 
 ## Docker
 
@@ -70,7 +216,8 @@ docker run --rm -p 8080:8080 --env-file .env invoice-builder
 
 ## Deploy To Google Cloud Run
 
-This repository includes a `Dockerfile`, so Cloud Run can build and run the service as a container.
+This repository includes a `Dockerfile`, so Cloud Run can build and run the
+service as a container.
 
 ### 1. Enable GCP services
 
@@ -89,7 +236,8 @@ Create these secrets in Secret Manager:
 - `invoice-builder-baselinker-token`
 - `invoice-builder-openai-api-key`
 
-The OpenAI secret is required because `DESCRIPTION_GENERATION_MODE=hybrid` is the supported mode.
+The OpenAI secret is required because `DESCRIPTION_GENERATION_MODE=hybrid` is
+the supported mode.
 
 ### 3. Deploy
 
@@ -104,7 +252,7 @@ gcloud run deploy invoice-builder \
   --cpu 1 \
   --concurrency 1 \
   --timeout 300 \
-  --set-env-vars DESCRIPTION_GENERATION_MODE=hybrid,OPENAI_MODEL=gpt-5-mini \
+  --set-env-vars DESCRIPTION_GENERATION_MODE=hybrid,OPENAI_MODEL=gpt-5.2,OPENAI_REASONING_EFFORT=medium \
   --update-secrets API_KEY=invoice-builder-api-key:latest,BASELINKER_API_TOKEN=invoice-builder-baselinker-token:latest,OPENAI_API_KEY=invoice-builder-openai-api-key:latest
 ```
 
@@ -168,32 +316,3 @@ function generateInvoice(orderId) {
   return DriveApp.createFile(blob);
 }
 ```
-
-## API Overview
-
-### `GET /health`
-
-Returns a simple service status payload.
-
-### `POST /generate`
-
-Protected by `X-API-Key`.
-
-Request body:
-
-```json
-{
-  "order_id": "12345"
-}
-```
-
-Response:
-
-- `200 OK`
-- `application/pdf`
-
-### `POST /generate-test`
-
-Protected by `X-API-Key`.
-
-Accepts a PDF upload and returns the merged test PDF.

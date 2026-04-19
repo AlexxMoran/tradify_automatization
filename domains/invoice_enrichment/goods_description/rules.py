@@ -7,115 +7,6 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-BANNED_WORDS = {
-    "aluminium",
-    "aluminum",
-    "copper",
-    "wood",
-    "brass",
-}
-
-ALLOWED_MATERIALS = (
-    "Plastic",
-    "Rubber",
-    "Textile",
-    "Composite",
-    "Steel",
-)
-
-BANNED_MATERIAL_COMBINATIONS = (
-    "/",
-    "+",
-    " and ",
-    " with ",
-)
-
-COUNTRY_MAP = {
-    "DE": "Germany",
-    "AT": "Austria",
-    "PL": "Poland",
-    "CN": "China",
-    "US": "United States",
-    "USA": "United States",
-    "GB": "United Kingdom",
-    "UK": "United Kingdom",
-    "IT": "Italy",
-    "ES": "Spain",
-    "FR": "France",
-    "CZ": "Czech Republic",
-    "NL": "Netherlands",
-    "JP": "Japan",
-    "SE": "Sweden",
-    "DK": "Denmark",
-    "IN": "India",
-    "TW": "Taiwan",
-}
-
-PLACEHOLDER_VALUES = {"", "UNKNOWN", "N/A", "NA", "NOT APPLICABLE", "NONE", "NULL"}
-
-THULE_FORBIDDEN_DESCRIPTION_TERMS = (
-    "roof rack",
-    "car",
-    "automotive",
-    "roof",
-    "dachowy",
-    "samochodowy",
-)
-
-ADDRESS_STREET_HINTS = (
-    "street",
-    "strasse",
-    "str.",
-    "road",
-    "rd",
-    "avenue",
-    "ave",
-    "blvd",
-    "boulevard",
-    "way",
-    "close",
-    "drive",
-    "dr",
-    "lane",
-    "ln",
-    "allee",
-    "plein",
-    "vej",
-    "ul.",
-    "ulitsa",
-    "industrial estate",
-    "business centre",
-    "business center",
-    "suite",
-    "unit",
-    "postbus",
-)
-
-ADDRESS_BANNED_ARTIFACTS = (
-    "@",
-    "http://",
-    "https://",
-    "www.",
-    ".com",
-    ".net",
-    ".org",
-    "instagram",
-    "facebook",
-    "tiktok",
-    "youtube",
-    "linkedin",
-    "telegram",
-    "whatsapp",
-    "discord",
-    "twitter",
-    "x.com",
-    "handle",
-    "username",
-    "user:",
-    "ig:",
-    "fb:",
-)
-
 
 @dataclass(frozen=True, slots=True)
 class BrandRule:
@@ -149,6 +40,68 @@ def normalize_lookup_text(value: str) -> str:
 
 def _data_path(filename: str) -> Path:
     return Path(__file__).resolve().parents[1] / "data" / filename
+
+
+@lru_cache()
+def load_customs_rules() -> dict[str, object]:
+    return json.loads(_data_path("customs_rules.json").read_text(encoding="utf-8"))
+
+
+def _customs_section(name: str) -> dict[str, object]:
+    section = load_customs_rules().get(name, {})
+    return section if isinstance(section, dict) else {}
+
+
+def _customs_list(section_name: str, field_name: str) -> tuple[str, ...]:
+    section = _customs_section(section_name)
+    values = section.get(field_name, ())
+    if not isinstance(values, list):
+        return ()
+    return tuple(str(value) for value in values)
+
+
+def _customs_map(section_name: str, field_name: str) -> dict[str, str]:
+    section = _customs_section(section_name)
+    values = section.get(field_name, {})
+    if not isinstance(values, dict):
+        return {}
+    return {str(key): str(value) for key, value in values.items()}
+
+
+_COUNTRY_RULES = _customs_section("countries")
+_DESCRIPTION_RULES = _customs_section("descriptions")
+_FIELD_OWNERSHIP_RULES = _customs_section("field_ownership")
+
+BANNED_WORDS = set(_customs_list("materials", "banned_words"))
+ALLOWED_MATERIALS = _customs_list("materials", "allowed")
+BANNED_MATERIAL_COMBINATIONS = _customs_list("materials", "banned_combinations")
+COUNTRY_MAP = _customs_map("countries", "code_map")
+CHINA_ORIGIN_FALLBACK = str(_COUNTRY_RULES.get("china_origin_fallback", "Taiwan"))
+DEFAULT_UNKNOWN_COUNTRY = str(_COUNTRY_RULES.get("default_unknown_country", "Poland"))
+PLACEHOLDER_VALUES = set(
+    str(value) for value in load_customs_rules().get("placeholders", [])
+)
+ADDRESS_STREET_HINTS = _customs_list("address", "street_hints")
+ADDRESS_BANNED_ARTIFACTS = _customs_list("address", "banned_artifacts")
+ENGLISH_REQUIRED_SUFFIX = str(
+    _DESCRIPTION_RULES.get("english_required_suffix", "intended for household use.")
+)
+POLISH_REQUIRED_SUFFIXES = _customs_list("descriptions", "polish_required_suffixes")
+THULE_FORBIDDEN_DESCRIPTION_TERMS = _customs_list(
+    "descriptions", "thule_forbidden_terms"
+)
+AI_OWNED_FIELDS = tuple(
+    str(value) for value in _FIELD_OWNERSHIP_RULES.get("ai_owned", [])
+)
+CODE_OWNED_FIELDS = tuple(
+    str(value) for value in _FIELD_OWNERSHIP_RULES.get("code_owned", [])
+)
+RULE_PREFERRED_FIELDS = tuple(
+    str(value) for value in _FIELD_OWNERSHIP_RULES.get("rule_preferred", [])
+)
+REVIEW_PATCH_ALLOWED_FIELDS = tuple(
+    str(value) for value in _FIELD_OWNERSHIP_RULES.get("review_patch_allowed", [])
+)
 
 
 @lru_cache()

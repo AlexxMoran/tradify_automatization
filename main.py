@@ -12,17 +12,23 @@ from domains.invoice_enrichment.api import router as invoice_router
 from domains.invoice_enrichment.application.invoice_processing_pipeline import (
     InvoiceProcessingPipeline,
 )
-from domains.invoice_enrichment.goods_description import (
-    GoodsDescriptionGateway,
-    GoodsDescriptionGenerator,
-    GoodsDescriptionNormalizer,
-    GoodsDescriptionValidator,
-    GoodsRuleResolver,
+from domains.invoice_enrichment.goods_description.ai.gateway import Gateway
+from domains.invoice_enrichment.goods_description.generation.generator import (
+    Generator,
 )
-from domains.invoice_enrichment.invoice_parser import InvoicePdfParser
-from domains.invoice_enrichment.pdf_documents import (
-    GoodsDescriptionPdfBuilder,
-    PdfMergeService,
+from domains.invoice_enrichment.goods_description.normalization.normalizer import (
+    Normalizer,
+)
+from domains.invoice_enrichment.goods_description.rule_resolver import RuleResolver
+from domains.invoice_enrichment.goods_description.generation.validator import (
+    Validator,
+)
+from domains.invoice_enrichment.invoice_pdf_parser.parser import Parser
+from domains.invoice_enrichment.pdf_document.builder import (
+    Builder,
+)
+from domains.invoice_enrichment.pdf_document.merge_service import (
+    MergeService,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,21 +38,22 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.baselinker_client = BaseLinkerClient()
-    normalizer = GoodsDescriptionNormalizer()
+    normalizer = Normalizer()
     app.state.invoice_processing_pipeline = InvoiceProcessingPipeline(
-        parser=InvoicePdfParser(),
-        description_generator=GoodsDescriptionGenerator(
-            resolver=GoodsRuleResolver(),
-            gateway=GoodsDescriptionGateway(
+        parser=Parser(),
+        description_generator=Generator(
+            resolver=RuleResolver(),
+            gateway=Gateway(
                 api_key=settings.openai_api_key,
                 model=settings.openai_model,
+                reasoning_effort=settings.openai_reasoning_effort,
                 generation_mode=settings.description_generation_mode,
             ),
             normalizer=normalizer,
-            validator=GoodsDescriptionValidator(normalizer),
+            validator=Validator(normalizer),
         ),
-        pdf_builder=GoodsDescriptionPdfBuilder(),
-        pdf_merger=PdfMergeService(),
+        pdf_builder=Builder(),
+        pdf_merger=MergeService(),
     )
     yield
     await app.state.baselinker_client.aclose()

@@ -13,7 +13,11 @@ class Settings(BaseSettings):
     port: int = Field(default=8080, alias="PORT")
     api_key: str = Field(default="", alias="API_KEY")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
-    openai_model: str = Field(default="gpt-5-mini", alias="OPENAI_MODEL")
+    openai_model: str = Field(default="gpt-5.2", alias="OPENAI_MODEL")
+    openai_reasoning_effort: str = Field(
+        default="medium",
+        alias="OPENAI_REASONING_EFFORT",
+    )
     description_generation_mode: str = Field(
         default="hybrid",
         alias="DESCRIPTION_GENERATION_MODE",

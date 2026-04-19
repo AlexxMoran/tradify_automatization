@@ -111,6 +111,8 @@ class ProcessedInvoiceResult:
     merged_pdf_size_bytes: int | None = None
     line_items: list[InvoiceLineItem] = field(default_factory=list)
     descriptions: list[GoodsDescriptionEntry] = field(default_factory=list)
+    enrichment_warnings: list[str] = field(default_factory=list)
+    enrichment_diagnostics: list[dict[str, object]] = field(default_factory=list)
     merged_pdf_bytes: bytes = field(default=b"", repr=False)
 
     def to_dict(self) -> dict[str, object]:

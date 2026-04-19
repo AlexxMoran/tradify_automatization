@@ -1,0 +1,1 @@
+"""Goods description normalization helpers."""

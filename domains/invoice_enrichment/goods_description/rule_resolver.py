@@ -4,6 +4,7 @@ from dataclasses import replace
 
 from core.utils import collapse_whitespace
 from domains.invoice_enrichment.goods_description.rules import (
+    CHINA_ORIGIN_FALLBACK,
     COUNTRY_MAP,
     BrandRule,
     CategoryRule,
@@ -14,7 +15,7 @@ from domains.invoice_enrichment.goods_description.rules import (
 from domains.invoice_enrichment.models import InvoiceLineItem, ResolvedRuleHints
 
 
-class GoodsRuleResolver:
+class RuleResolver:
     def __init__(self) -> None:
         self._brand_rules = load_brand_rules()
         self._category_rules = load_category_rules()
@@ -49,17 +50,6 @@ class GoodsRuleResolver:
 
         hints = self._apply_origin_overrides(item, hints, text)
         return self._compact(hints)
-
-    def has_sufficient_local_hints(self, hints: ResolvedRuleHints) -> bool:
-        return all(
-            (
-                hints.description_en_hint,
-                hints.description_pl_hint,
-                hints.made_of_hint,
-                hints.country_of_origin_hint,
-                hints.manufacturer_data_hint,
-            )
-        )
 
     def _match_brand(self, text: str) -> BrandRule | None:
         matches = [
@@ -130,10 +120,12 @@ class GoodsRuleResolver:
 
         if origin == "CN":
             prompt_notes.append(
-                "Invoice origin CN must not become China in the final answer. Use the brand headquarters country instead, or Taiwan if the brand still resolves to China."
+                "Invoice origin CN must not become China in the final answer. "
+                "Use the brand headquarters country instead, or "
+                f"{CHINA_ORIGIN_FALLBACK} if the brand still resolves to China."
             )
             if country_hint == "China":
-                country_hint = "Taiwan"
+                country_hint = CHINA_ORIGIN_FALLBACK
                 made_in_hint = country_hint
 
         if not country_hint and origin:

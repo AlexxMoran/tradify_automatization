@@ -19,9 +19,5 @@ class ParsingError(InvoiceProcessingError):
     status_code = 422
 
 
-class DomainValidationError(InvoiceProcessingError):
-    status_code = 422
-
-
 class PdfCompositionError(InvoiceProcessingError):
     status_code = 500
